@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hand Tracking Cursor — Demo</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap"
+    />
+    <link rel="stylesheet" href="./demo.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <p class="eyebrow">Hand Tracking Cursor</p>
+      <h1>Control this page<br />without touching anything.</h1>
+      <p class="lede">
+        Turn on the camera in the trackpad at the bottom left. Move your hand to move the
+        cursor. Touch your index finger to your thumb to click, and hold the pinch while
+        moving up or down to scroll.
+      </p>
+      <div class="row">
+        <button class="btn btn--primary" data-count>Tapped 0 times</button>
+        <a class="btn btn--ghost" href="#gestures">Jump to gestures</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="section" id="gestures">
+        <h2>Gestures</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>Move</h3>
+            <p>
+              An open hand moves the arrow. The cursor leans into the direction it is
+              travelling, then straightens back up when you hold still.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Tap</h3>
+            <p>
+              Bring your index finger to your thumb. The skeleton turns green, the arrow
+              scales down, and the element underneath receives a real click.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Scroll</h3>
+            <p>
+              Hold the pinch and drag up or down. Whatever is under the cursor scrolls —
+              the page, or a single panel — and it keeps gliding when you let go.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Scroll inside an element</h2>
+        <p class="note">
+          Pinch over this list and drag. The list scrolls on its own; the page stays put.
+        </p>
+        <div class="scroller" id="list"></div>
+      </section>
+
+      <section class="section">
+        <h2>Ordinary controls</h2>
+        <p class="note">Everything here responds to a pinch exactly as it does to a click.</p>
+        <div class="controls">
+          <label class="control">
+            <span>Grayscale preview</span>
+            <input type="checkbox" class="toggle" checked data-option="grayscale" />
+          </label>
+          <label class="control">
+            <span>Cursor rotation</span>
+            <input type="checkbox" class="toggle" checked data-option="rotation" />
+          </label>
+          <label class="control">
+            <span>Minimized trackpad</span>
+            <input type="checkbox" class="toggle" data-option="minimized" />
+          </label>
+        </div>
+        <div class="row">
+          <button class="btn btn--ghost" data-reposition="bottom-left">Bottom left</button>
+          <button class="btn btn--ghost" data-reposition="bottom-right">Bottom right</button>
+          <button class="btn btn--ghost" data-reposition="top-right">Top right</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Event log</h2>
+        <p class="note">Every gesture the cursor emits, newest first.</p>
+        <ul class="log" id="log"></ul>
+      </section>
+
+      <section class="section tall">
+        <h2>Room to scroll</h2>
+        <p class="note">Filler, so there is somewhere to fling to.</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Video is processed on-device and never leaves the browser.</p>
+    </footer>
+
+    <script src="../dist/hand-cursor.js" data-manual></script>
+    <script src="./demo.js"></script>
+  </body>
+</html>

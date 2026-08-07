@@ -1,0 +1,47 @@
+{
+  "name": "hand-tracking-cursor",
+  "version": "1.0.0",
+  "description": "A MediaPipe hand tracking cursor you can drop onto any website with one script tag.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/hand-cursor.esm.js",
+  "module": "./dist/hand-cursor.esm.js",
+  "browser": "./dist/hand-cursor.js",
+  "exports": {
+    ".": {
+      "import": "./dist/hand-cursor.esm.js",
+      "default": "./dist/hand-cursor.js"
+    },
+    "./dist/*": "./dist/*",
+    "./src/*": "./src/*"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "serve": "node scripts/serve.mjs",
+    "dev": "npm run build && npm run serve",
+    "test": "node test/run.mjs"
+  },
+  "keywords": [
+    "mediapipe",
+    "hand-tracking",
+    "cursor",
+    "gesture",
+    "webcam",
+    "accessibility"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/willhschmid/Hand-Tracking-Cursor.git"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "playwright": "^1.56.1"
+  }
+}

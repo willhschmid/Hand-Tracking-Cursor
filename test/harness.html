@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hand Tracking Cursor — test harness</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      #page { height: 3000px; padding: 40px; }
+      #btn { padding: 20px 30px; font-size: 20px; }
+      #box { margin-top: 40px; width: 400px; height: 200px; overflow-y: auto; border: 2px solid #333; }
+      #box div { padding: 20px; }
+    </style>
+  </head>
+  <body>
+    <div id="page">
+      <button id="btn">click me</button>
+      <span id="out">0</span>
+      <div id="box"></div>
+    </div>
+
+    <script src="../dist/hand-cursor.js" data-manual></script>
+    <script>
+      /*
+       * Drives the controller with synthetic landmarks so the cursor, gesture
+       * and scrolling behaviour can be tested without a camera or the MediaPipe
+       * model. `feed()` stands in for one frame of tracking.
+       */
+      document.getElementById('box').innerHTML = Array.from(
+        { length: 40 },
+        (_, i) => `<div>row ${i}</div>`,
+      ).join('');
+
+      let clicks = 0;
+      document.getElementById('btn').addEventListener('click', () => {
+        document.getElementById('out').textContent = String(++clicks);
+      });
+
+      // Smoothing is turned almost off so a fed position lands immediately.
+      window.hc = HandCursor.init({ font: false, smoothing: { minCutoff: 60, beta: 0 } });
+
+      const OPEN = [
+        [0.50, 0.95], [0.67, 0.87], [0.79, 0.75], [0.86, 0.64], [0.91, 0.54],
+        [0.58, 0.53], [0.61, 0.37], [0.62, 0.27], [0.63, 0.17],
+        [0.47, 0.51], [0.47, 0.33], [0.47, 0.22], [0.47, 0.12],
+        [0.36, 0.53], [0.33, 0.36], [0.32, 0.25], [0.31, 0.16],
+        [0.26, 0.58], [0.21, 0.45], [0.19, 0.36], [0.17, 0.28],
+      ];
+      const VIDEO = { videoWidth: 640, videoHeight: 480 };
+
+      /** An open or pinched hand whose control point sits at (cx, cy). */
+      window.makeHand = (cx, cy, pinch) => {
+        const points = OPEN.map(([x, y]) => ({ x, y, z: 0 }));
+        if (pinch) {
+          const mx = (points[4].x + points[8].x) / 2;
+          const my = (points[4].y + points[8].y) / 2;
+          points[4] = { x: mx + 0.005, y: my, z: 0 };
+          points[8] = { x: mx - 0.005, y: my, z: 0 };
+        }
+        const dx = cx - (points[4].x + points[8].x) / 2;
+        const dy = cy - (points[4].y + points[8].y) / 2;
+        return points.map((p) => ({ x: p.x + dx, y: p.y + dy, z: 0 }));
+      };
+
+      let clock = 1000;
+      window.feed = (cx, cy, pinch, step = 33) => {
+        clock += step;
+        hc.consumeHand(window.makeHand(cx, cy, pinch), clock, VIDEO);
+        return { x: hc.position.x, y: hc.position.y, pinching: hc.pinching };
+      };
+
+      /** Viewport point -> camera coordinates, undoing mirror and dead zone. */
+      window.toCamera = (x, y) => {
+        const r = hc.options.region;
+        return [
+          1 - ((x / innerWidth) * (1 - 2 * r.x) + r.x),
+          (y / innerHeight) * (1 - 2 * r.y) + r.y,
+        ];
+      };
+    </script>
+  </body>
+</html>
