@@ -24,9 +24,10 @@ export const COLOR = {
   divider: 'rgba(0, 0, 0, 0.08)',
 };
 
-/** Corner radii: small for controls, medium for cards & buttons. */
+/** Corner radii: small for controls, medium for buttons, large for cards. */
 export const RADIUS = {
   control: 4,
+  button: 8,
   card: 12,
 };
 

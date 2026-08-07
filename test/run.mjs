@@ -94,8 +94,8 @@ check(
 
 const cta = await shadow('.hc-cta');
 check(
-  'CTA is 32px tall, green, 12px radius',
-  cta.height === 32 && cta.background === 'rgb(0, 202, 72)' && cta.radius === '12px',
+  'CTA is 32px tall, green, 8px radius',
+  cta.height === 32 && cta.background === 'rgb(0, 202, 72)' && cta.radius === '8px',
   JSON.stringify(cta),
 );
 check('CTA reads "Enable Camera"', cta.text === 'Enable Camera', cta.text);
@@ -126,9 +126,10 @@ check(
 );
 
 check(
-  'minimized camera button is 32x32, inset 4px',
+  'minimized camera button is 32x32, 8px radius, inset 4px',
   miniCta.width === 32 &&
     miniCta.height === 32 &&
+    miniCta.radius === '8px' &&
     miniCta.left - mini.left === 4 &&
     mini.bottom - miniCta.bottom === 4,
   JSON.stringify(miniCta),

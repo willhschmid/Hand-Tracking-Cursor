@@ -159,7 +159,7 @@ export const CSS = `
   gap: ${SIZE.ctaGap}px;
   height: ${SIZE.ctaHeight}px;
   padding: 0 ${SIZE.ctaPadX}px;
-  border-radius: ${RADIUS.card}px;
+  border-radius: ${RADIUS.button}px;
   background: ${COLOR.green};
   color: ${COLOR.white};
   font-family: inherit;
@@ -220,7 +220,7 @@ export const CSS = `
   bottom: ${SIZE.cornerInset}px;
   width: ${SIZE.miniCta}px;
   height: ${SIZE.miniCta}px;
-  border-radius: ${RADIUS.card}px;
+  border-radius: ${RADIUS.button}px;
   background: ${COLOR.green};
   color: ${COLOR.white};
   transition: background-color 150ms linear, transform 120ms ease-out;
