@@ -310,10 +310,16 @@ rotation and the tapped scale all pivot there, so the tip stays pinned to the
 coordinate being addressed.
 
 The hand on the pre-enabled card is `assets/hand-graphic.png`, inlined as a data
-URI so the library stays a single file with no external requests. It is
-quantized to a 64-colour palette on the way in, which takes it from 50kB to 6kB
-with no visible difference — the source is flat greys plus two brand colours.
-Re-run `python3 scripts/embed-illustration.py` after changing the artwork.
+URI so the library stays a single file with no external requests. The bytes are
+copied verbatim — base64 is an encoding, not a compression, so what renders is
+exactly the source file. Re-run `node scripts/embed-illustration.mjs` after
+changing the artwork.
+
+That artwork is most of the bundle: ~100kB minified, ~63kB gzipped, against
+~10kB for the code. Do not be tempted to quantize it — the soft grey gradients
+band under a reduced palette and read as pixelation at card size, however clean
+the side-by-side looks at full resolution. If you need the bundle small, host
+the PNG yourself and swap the `<img>` source rather than degrading it.
 
 One measurement note: a 98px illustration, two lines of copy and a 32px button
 cannot sit inside a 200px card with 12px gaps. The outer padding is held at 12px
@@ -411,7 +417,7 @@ src/
   driver.js       landmarks in, page interaction out (shared entry point)
   pointer.js      taps, drag-scrolling and momentum
   hover.js        CSS :hover emulation
-  hand-graphic.js generated — see scripts/embed-illustration.py
+  hand-graphic.js generated — see scripts/embed-illustration.mjs
   hand-model.js   MediaPipe loading and camera access
   landmarks.js    hand topology, pinch and control-point math
   skeleton.js     canvas overlay and the static illustration
