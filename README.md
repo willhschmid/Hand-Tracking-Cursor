@@ -97,7 +97,7 @@ Module builds never auto-mount — call `init()` when you are ready.
 
 | Gesture | What happens |
 | --- | --- |
-| Open hand, move around | The cursor tracks across the viewport and leans into the direction it is travelling |
+| Open hand, move around | The cursor tracks across the viewport and leans up to 15° into its direction of travel |
 | Index finger meets thumb | Click. The skeleton turns green and the cursor scales down while held |
 | Pinch and drag up / down | Scrolls whatever is under the cursor — the page, or a single scrollable element — and flings on release |
 | Hand leaves frame | The cursor fades out and any press is cancelled |
@@ -156,15 +156,26 @@ HandCursor.init({
   // Pinch distance as a fraction of hand size, with hysteresis.
   pinch: { on: 0.42, off: 0.55 },
 
-  tap: { maxDuration: 500, maxTravel: 14 },
-  drag: { threshold: 10, friction: 0.94, minVelocity: 0.4, maxVelocity: 60 },
+  // A press shorter and tighter than this is a tap. Both are generous next to a
+  // touchscreen: a pinch held in mid-air always drifts.
+  tap: { maxDuration: 800, maxTravel: 32 },
+
+  // What keeps a tap from becoming a scroll: the pinch must travel a real
+  // distance *and* be held past the moment of pinching before anything scrolls.
+  drag: {
+    threshold: 34,           // px of travel before a scroll starts
+    holdDelay: 140,          // ms the pinch must be held first
+    friction: 0.94,
+    minVelocity: 0.4,
+    maxVelocity: 60,
+  },
 
   rotation: {
     enabled: true,
-    minSpeed: 0.35,          // px/frame before the arrow starts turning
-    smoothing: 0.2,
-    idleDelay: 350,          // ms of stillness before it straightens back up
-    returnSmoothing: 0.08,
+    maxAngle: 15,            // degrees; the arrow sways, it never spins
+    gain: 1.2,               // degrees per px/frame of horizontal speed
+    minSpeed: 0.6,           // px/frame deadzone
+    smoothing: 0.12,
   },
 
   cursor: { scale: 1, pressScale: 0.85 },
@@ -246,10 +257,14 @@ document.addEventListener('handcursor:tap', (event) => {
    leaving frame.
 4. **Smoothing.** A [1€ filter](https://gery.casiez.net/1euro/) removes jitter
    while the hand is still without adding lag while it moves.
-5. **Pinch.** Thumb-to-index distance is measured as a fraction of hand size, so
+5. **Sway.** The arrow leans by horizontal *speed*, not by the direction of the
+   velocity vector. Pointing it along `atan2(vy, vx)` is the obvious approach
+   and is unusable: the direction of a near-zero vector is noise, so a hand
+   holding still whips the cursor through every angle.
+6. **Pinch.** Thumb-to-index distance is measured as a fraction of hand size, so
    it works at any distance from the camera. Separate on/off thresholds stop a
    hovering hand from chattering.
-6. **Interaction.** A short, tight pinch is a tap; a pinch that travels becomes a
+7. **Interaction.** A short, tight pinch is a tap; a pinch that travels becomes a
    scroll on the nearest scrollable ancestor, with exponential-decay momentum on
    release.
 
@@ -275,10 +290,23 @@ Built to the *Hand Tracking Cursor Design System* (August 2026). Tokens live in
 | Radius | 4px controls, 12px cards and buttons |
 | Trackpad | 260 × 200, 12px padding, 4px corner insets |
 | Minimized | 106 × 106 with a 32 × 32 camera button |
+| Illustration | 66 × 98 on the pre-enabled card |
+| Icons | 24 × 24 Material Symbols in `#1C1B1F`, in 32 × 32 buttons |
+| Live preview | Camera at 15% opacity over the `#F6F6F6` card, so icons stay legible |
 
-Icons are drawn inline on the Material Symbols 24px grid (`videocam`,
-`videocam_off`, `collapse_content`, `expand_content`) so they can be swapped for
-the real Material Symbols assets without touching layout.
+Icons are the supplied Material Symbols assets (`videocam`, `videocam_off`,
+`collapse_content`, `expand_content`), inlined in `src/icons.js` and drawn in
+`currentColor`. The cursor arrow is the supplied 32 × 32 SVG, with its viewBox
+retargeted so the arrow's point sits exactly at the element origin — position,
+rotation and the tapped scale all pivot there, so the tip stays pinned to the
+coordinate being addressed.
+
+Two notes on the pre-enabled card. The hand is generated from the same landmark
+topology as the live overlay rather than being a bitmap, so the resting state
+reads as a frozen frame of the running one; drop a real asset into `.hc-illo` if
+you would rather ship artwork. And a 98px illustration, two lines of copy and a
+32px button cannot sit inside 200px with 12px gaps — the outer padding is held
+at 12px and the two internal gaps settle at 7px each.
 
 ---
 

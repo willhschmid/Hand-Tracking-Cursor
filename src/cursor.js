@@ -1,6 +1,6 @@
-import { ARROW_SVG, ARROW_REST_ANGLE } from './icons.js';
+import { ARROW_SVG } from './icons.js';
 
-const shortestDelta = (from, to) => ((((to - from) % 360) + 540) % 360) - 180;
+const clamp = (v, min, max) => (v < min ? min : v > max ? max : v);
 
 /**
  * The on-screen arrow.
@@ -56,17 +56,18 @@ export class Cursor {
 
     const rotation = this.options.rotation;
     if (rotation.enabled && !this.reducedMotion) {
-      const speed = Math.hypot(vx, vy);
-      if (speed >= rotation.minSpeed) {
-        this.lastMoveAt = now;
-        const heading = (Math.atan2(vy, vx) * 180) / Math.PI;
-        // Express the heading relative to the arrow's natural resting tilt so a
-        // rotation of 0 is the familiar upright pointer.
-        const target = heading - ARROW_REST_ANGLE;
-        this.angle += shortestDelta(this.angle, target) * rotation.smoothing;
-      } else if (now - this.lastMoveAt > rotation.idleDelay) {
-        this.angle += shortestDelta(this.angle, 0) * rotation.returnSmoothing;
-      }
+      // A slight lean into horizontal travel, never a spin.
+      //
+      // The obvious implementation — point the arrow along atan2(vy, vx) — is
+      // unusable in practice: the *direction* of a near-zero velocity vector is
+      // noise, so a hand holding still whips the cursor through every angle.
+      // Horizontal magnitude is stable at rest, and it decays to zero on its
+      // own, so the arrow returns upright without any idle bookkeeping.
+      const target =
+        Math.abs(vx) < rotation.minSpeed
+          ? 0
+          : clamp(vx * rotation.gain, -rotation.maxAngle, rotation.maxAngle);
+      this.angle += (target - this.angle) * rotation.smoothing;
     } else {
       this.angle = 0;
     }

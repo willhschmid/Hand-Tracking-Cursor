@@ -32,8 +32,7 @@ export const CSS = `
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: ${SIZE.gap}px;
+  justify-content: space-between;
   background: ${COLOR.lightGray};
   border-radius: ${RADIUS.card}px;
   overflow: hidden;
@@ -57,22 +56,23 @@ export const CSS = `
   width: ${SIZE.miniSize}px;
   height: ${SIZE.miniSize}px;
   padding: 0;
-  gap: 0;
 }
 
 .hc-root[data-state="live"] .hc-panel {
   padding: 0;
-  gap: 0;
-  background: ${COLOR.black};
+  background: ${COLOR.lightGray};
 }
 
 /* ---------------------------------------------------------------- stage -- */
 
 .hc-stage {
   position: relative;
-  flex: 1 1 auto;
-  width: 100%;
-  min-height: 0;
+  /* Fixed at the illustration's size; the card distributes what is left over.
+     A 98px illustration, two lines of copy and a 32px button do not leave room
+     for 12px gaps inside 200px, so the gaps are what give. */
+  flex: 0 0 auto;
+  width: ${SIZE.illoWidth}px;
+  height: ${SIZE.illoHeight}px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -82,7 +82,8 @@ export const CSS = `
 .hc-root[data-mini="true"] .hc-stage {
   position: absolute;
   inset: 0;
-  flex: none;
+  width: auto;
+  height: auto;
 }
 
 .hc-video,
@@ -98,6 +99,9 @@ export const CSS = `
   object-fit: cover;
   transform: scaleX(-1);
   filter: var(--hc-video-filter, none);
+  /* Knocked right back so the dark icons and the skeleton stay legible over
+     the #F6F6F6 card behind it. */
+  opacity: var(--hc-video-opacity, 0.15);
 }
 
 .hc-root[data-state="live"] .hc-video,
@@ -202,14 +206,6 @@ export const CSS = `
 
 .hc-root[data-state="live"] .hc-corner--tl { display: inline-flex; }
 
-.hc-root[data-state="live"] .hc-corner {
-  color: ${COLOR.white};
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
-}
-
-.hc-root[data-state="live"] .hc-corner:hover,
-.hc-root[data-state="live"] .hc-corner.hc-hover { background: rgba(255, 255, 255, 0.16); }
-
 /* ------------------------------------------------------- minimized cta -- */
 
 .hc-mini-cta {
@@ -223,7 +219,7 @@ export const CSS = `
   transition: background-color 150ms linear, transform 120ms ease-out;
 }
 
-.hc-mini-cta svg { width: 18px; height: 18px; }
+.hc-mini-cta svg { width: ${SIZE.iconSize}px; height: ${SIZE.iconSize}px; }
 .hc-mini-cta:hover,
 .hc-mini-cta.hc-hover { background: ${COLOR.darkGreen}; }
 .hc-mini-cta:active { transform: scale(0.94); }
@@ -237,7 +233,7 @@ export const CSS = `
 
 .hc-root[data-mini="true"][data-state="live"] .hc-mini-cta:hover,
 .hc-root[data-mini="true"][data-state="live"] .hc-mini-cta.hc-hover {
-  background: ${COLOR.lightGray};
+  background: ${COLOR.border};
 }
 
 .hc-root[data-mini="true"][data-state="loading"] .hc-mini-cta { opacity: 0.7; }
@@ -262,8 +258,8 @@ export const CSS = `
   position: fixed;
   top: 0;
   left: 0;
-  width: var(--hc-cursor-w, 18px);
-  aspect-ratio: 13 / 21;
+  width: var(--hc-cursor-w, 20px);
+  aspect-ratio: 1;
   /* The arrow tip sits at the element's origin, so rotation and the tapped
      scale both pivot on the exact point being addressed. */
   transform-origin: 0 0;
@@ -273,7 +269,9 @@ export const CSS = `
   transition: opacity 160ms linear;
 }
 
-.hc-cursor svg { width: 100%; height: 100%; overflow: visible; }
+/* display:block matters here: an inline svg sits on a text baseline and picks
+   up descender space, which made the element taller than its aspect-ratio. */
+.hc-cursor svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
 .hc-cursor[data-visible="true"] { opacity: 1; }
 

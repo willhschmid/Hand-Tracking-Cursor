@@ -40,19 +40,38 @@ export const DEFAULTS = {
    */
   pinch: { on: 0.42, off: 0.55 },
 
-  /** A press shorter and tighter than this counts as a tap. */
-  tap: { maxDuration: 500, maxTravel: 14 },
+  /**
+   * A press shorter and tighter than this counts as a tap. Both numbers are
+   * generous compared to a touchscreen: a pinch held in mid-air always drifts a
+   * little, and the gesture itself takes longer than a finger on glass.
+   */
+  tap: { maxDuration: 800, maxTravel: 32 },
 
-  /** Press-and-drag scrolling, with a touch-style fling on release. */
-  drag: { threshold: 10, friction: 0.94, minVelocity: 0.4, maxVelocity: 60 },
+  /**
+   * Press-and-drag scrolling, with a touch-style fling on release.
+   *
+   * `threshold` and `holdDelay` are what keep a tap from turning into a scroll:
+   * the pinch has to travel a real distance *and* be held past the moment of
+   * pinching before anything scrolls.
+   */
+  drag: {
+    threshold: 34,
+    holdDelay: 140,
+    friction: 0.94,
+    minVelocity: 0.4,
+    maxVelocity: 60,
+  },
 
-  /** The playful bit: the arrow leans into the direction it travels. */
+  /**
+   * The playful bit: the arrow leans into the direction it travels, capped so
+   * it sways rather than spins.
+   */
   rotation: {
     enabled: true,
-    minSpeed: 0.35,
-    smoothing: 0.2,
-    idleDelay: 350,
-    returnSmoothing: 0.08,
+    maxAngle: 15,
+    gain: 1.2,
+    minSpeed: 0.6,
+    smoothing: 0.12,
   },
 
   /** Cursor sizing. `pressScale` is the tapped state from the spec. */

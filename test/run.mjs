@@ -146,13 +146,47 @@ check(
 
 const rotation = await page.evaluate(() => {
   const el = document.querySelector('[data-hand-cursor]').shadowRoot.querySelector('.hc-cursor');
-  const m = new DOMMatrix(getComputedStyle(el).transform);
-  return Math.round((Math.atan2(m.b, m.a) * 180) / Math.PI);
+  const angle = () => {
+    const m = new DOMMatrix(getComputedStyle(el).transform);
+    return (Math.atan2(m.b, m.a) * 180) / Math.PI;
+  };
+
+  // Sweeping right, then left.
+  for (let i = 0; i <= 30; i++) window.feed(0.5 - i * 0.012, 0.5, false);
+  const right = angle();
+  for (let i = 0; i <= 30; i++) window.feed(0.14 + i * 0.012, 0.5, false);
+  const left = angle();
+
+  // Settle, then jitter by well under a pixel — the case that used to send the
+  // arrow spinning, because atan2 of a near-zero velocity is noise.
+  for (let i = 0; i < 60; i++) window.feed(0.5, 0.5, false);
+  const still = angle();
+  let worst = 0;
+  for (let i = 0; i < 60; i++) {
+    window.feed(0.5 + (i % 2 ? 0.0004 : -0.0004), 0.5 + (i % 3 ? 0.0004 : -0.0004), false);
+    worst = Math.max(worst, Math.abs(angle()));
+  }
+  return { right, left, still, worst };
 });
 check(
-  'cursor rotates toward its direction of travel',
-  Math.abs(rotation - 112) < 25,
-  `${rotation}deg, expected ~112deg`,
+  'cursor leans into travel, right and left',
+  rotation.right > 4 && rotation.left < -4,
+  JSON.stringify(rotation),
+);
+check(
+  'the lean is capped at 15 degrees',
+  Math.abs(rotation.right) <= 15.5 && Math.abs(rotation.left) <= 15.5,
+  JSON.stringify(rotation),
+);
+check(
+  'a still hand leaves the cursor upright',
+  Math.abs(rotation.still) < 1,
+  `${rotation.still}deg`,
+);
+check(
+  'sub-pixel jitter does not swing the cursor',
+  rotation.worst < 3,
+  `worst ${rotation.worst.toFixed(1)}deg during jitter`,
 );
 
 const edges = await page.evaluate(() => {
@@ -216,8 +250,8 @@ const elementScroll = await page.evaluate(() => {
   let cy = rect.top + rect.height / 2;
   for (let i = 0; i < 40; i++) window.feed(...window.toCamera(cx, cy), false);
   window.feed(...window.toCamera(cx, cy), true);
-  for (let i = 0; i < 30; i++) {
-    cy -= 2;
+  for (let i = 0; i < 60; i++) {
+    cy -= 3;
     window.feed(...window.toCamera(cx, cy), true);
   }
   const scrolled = box.scrollTop;
@@ -226,7 +260,7 @@ const elementScroll = await page.evaluate(() => {
 });
 check(
   'pinch-drag scrolls the element under the cursor',
-  elementScroll.scrolled > 30,
+  elementScroll.scrolled > 80,
   JSON.stringify(elementScroll),
 );
 check('the page stays put while an element scrolls', elementScroll.page === 0);
@@ -237,8 +271,8 @@ const pageScroll = await page.evaluate(async () => {
   let cy = 400;
   for (let i = 0; i < 40; i++) window.feed(...window.toCamera(cx, cy), false);
   window.feed(...window.toCamera(cx, cy), true);
-  for (let i = 0; i < 30; i++) {
-    cy -= 3;
+  for (let i = 0; i < 50; i++) {
+    cy -= 4;
     window.feed(...window.toCamera(cx, cy), true);
   }
   const during = window.scrollY;
@@ -253,8 +287,41 @@ check(
   JSON.stringify(pageScroll),
 );
 
+const driftyTap = await page.evaluate(async () => {
+  // A pinch that wanders 20px and releases quickly is a tap, not a scroll.
+  // With the old 10px threshold this became a scroll and swallowed the click.
+  // Back to the top first: the fling above left the button off-screen.
+  window.scrollTo(0, 0);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  window.scrollTo(0, 0);
+
+  const button = document.getElementById('btn');
+  const before = Number(document.getElementById('out').textContent);
+  const rect = button.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  let cy = rect.top + rect.height / 2;
+  const scrollBefore = window.scrollY;
+
+  for (let i = 0; i < 40; i++) window.feed(...window.toCamera(cx, cy), false);
+  window.feed(...window.toCamera(cx, cy), true);
+  for (let i = 0; i < 5; i++) {
+    cy -= 4;
+    window.feed(...window.toCamera(cx, cy), true);
+  }
+  window.feed(...window.toCamera(cx, cy), false);
+  return {
+    clicked: Number(document.getElementById('out').textContent) - before,
+    scrolled: window.scrollY - scrollBefore,
+  };
+});
+check(
+  'a pinch that drifts still counts as a tap',
+  driftyTap.clicked === 1 && driftyTap.scrolled === 0,
+  JSON.stringify(driftyTap),
+);
+
 const clicksAfterDrag = await page.evaluate(() => document.getElementById('out').textContent);
-check('a drag does not also fire a click', clicksAfterDrag === '1', clicksAfterDrag);
+check('a drag does not also fire a click', clicksAfterDrag === '2', clicksAfterDrag);
 
 const hover = await page.evaluate(() => {
   // CSS :hover only ever follows the real pointer, so the library mirrors the

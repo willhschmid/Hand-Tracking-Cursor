@@ -46,12 +46,15 @@ export const SIZE = {
   pad: 12,
   gap: 12,
   cornerInset: 4,
-  cornerButton: 24,
-  iconSize: 16,
+  cornerButton: 32,
+  iconSize: 24,
   ctaHeight: 32,
   ctaPadX: 12,
   ctaGap: 8,
   miniCta: 32,
+  /** The hand illustration on the pre-enabled card. */
+  illoWidth: 66,
+  illoHeight: 98,
 };
 
 export const FONT_URL =

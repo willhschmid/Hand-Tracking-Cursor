@@ -1,47 +1,86 @@
 /**
- * Inline icons, drawn on the Material Symbols 24px grid so they can be swapped
- * for the real Material Symbols assets without touching any layout.
- *
- *   videocam      -> Enable Camera button
- *   videocam_off  -> turn the camera off
- *   collapse      -> collapse_content (minimize the trackpad)
- *   expand        -> expand_content (restore the trackpad)
+ * Material Symbols, 24px grid, drawn in `currentColor` so the CSS decides the
+ * colour. The exported SVGs are the supplied assets with the full-bleed alpha
+ * mask dropped — it covered the whole viewBox and clipped nothing.
  */
 
-const svg = (body) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ` +
-  `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
-
-const CAMERA_BODY =
-  '<rect x="3" y="6" width="13" height="12" rx="2.5"/>' +
-  '<path d="M16 10.6 21 7v10l-5-3.6z"/>';
+const symbol = (d) =>
+  '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">' +
+  `<path d="${d}" fill="currentColor"/></svg>`;
 
 export const ICONS = {
-  videocam: svg(CAMERA_BODY),
+  videocam: symbol(
+    'M4 20C3.45 20 2.97917 19.8042 2.5875 19.4125C2.19583 19.0208 2 18.55 2 18V6C2 5.45 ' +
+      '2.19583 4.97917 2.5875 4.5875C2.97917 4.19583 3.45 4 4 4H16C16.55 4 17.0208 4.19583 ' +
+      '17.4125 4.5875C17.8042 4.97917 18 5.45 18 6V10.5L21.15 7.35C21.3167 7.18333 21.5 ' +
+      '7.14167 21.7 7.225C21.9 7.30833 22 7.46667 22 7.7V16.3C22 16.5333 21.9 16.6917 21.7 ' +
+      '16.775C21.5 16.8583 21.3167 16.8167 21.15 16.65L18 13.5V18C18 18.55 17.8042 19.0208 ' +
+      '17.4125 19.4125C17.0208 19.8042 16.55 20 16 20H4ZM4 18H16V6H4V18Z',
+  ),
 
-  videocamOff: svg(`${CAMERA_BODY}<path d="M3.5 3.5 20.5 20.5"/>`),
+  videocamOff: symbol(
+    'M18.0002 10.5L21.1502 7.35001C21.3169 7.18334 21.5002 7.14167 21.7002 7.22501C21.9002 ' +
+      '7.30834 22.0002 7.46667 22.0002 7.70001V16.3C22.0002 16.5333 21.9002 16.6917 21.7002 ' +
+      '16.775C21.5002 16.8583 21.3169 16.8167 21.1502 16.65L18.0002 13.5C18.0002 13.7833 ' +
+      '17.9044 14.0208 17.7127 14.2125C17.521 14.4042 17.2835 14.5 17.0002 14.5C16.7169 14.5 ' +
+      '16.4794 14.4042 16.2877 14.2125C16.096 14.0208 16.0002 13.7833 16.0002 13.5V6.00001H9.0002' +
+      'C8.66686 6.00001 8.41686 5.89584 8.2502 5.68751C8.08353 5.47917 8.0002 5.25001 8.0002 ' +
+      '5.00001C8.0002 4.75001 8.08353 4.52084 8.2502 4.31251C8.41686 4.10417 8.66686 4.00001 ' +
+      '9.0002 4.00001H16.0002C16.5502 4.00001 17.021 4.19584 17.4127 4.58751C17.8044 4.97917 ' +
+      '18.0002 5.45001 18.0002 6.00001V10.5ZM19.8502 22.65L1.3502 4.15001C1.16686 3.96667 ' +
+      '1.0752 3.73334 1.0752 3.45001C1.0752 3.16667 1.16686 2.93334 1.3502 2.75001C1.53353 ' +
+      '2.56667 1.76686 2.47501 2.0502 2.47501C2.33353 2.47501 2.56686 2.56667 2.7502 2.75001' +
+      'L21.2502 21.25C21.4335 21.4333 21.5252 21.6667 21.5252 21.95C21.5252 22.2333 21.4335 ' +
+      '22.4667 21.2502 22.65C21.0669 22.8333 20.8335 22.925 20.5502 22.925C20.2669 22.925 ' +
+      '20.0335 22.8333 19.8502 22.65ZM4.0002 4.00001L6.0002 6.00001H4.0002V18H16.0002V16' +
+      'L18.0002 18C18.0002 18.55 17.8044 19.0208 17.4127 19.4125C17.021 19.8042 16.5502 20 ' +
+      '16.0002 20H4.0002C3.4502 20 2.97936 19.8042 2.5877 19.4125C2.19603 19.0208 2.0002 ' +
+      '18.55 2.0002 18V6.00001C2.0002 5.45001 2.19603 4.97917 2.5877 4.58751C2.97936 4.19584 ' +
+      '3.4502 4.00001 4.0002 4.00001Z',
+  ),
 
-  // Two corner brackets pulled in toward the middle. The 6-unit offset from the
-  // centre line keeps them from merging into a plus sign at 16px.
-  collapse: svg('<path d="M15 3v6h6"/><path d="M9 21v-6H3"/>'),
+  collapse: symbol(
+    'M9.92658 15H6.91499C6.63057 15 6.39215 14.9042 6.19974 14.7125C6.00734 14.5208 5.91113 ' +
+      '14.2833 5.91113 14C5.91113 13.7167 6.00734 13.4792 6.19974 13.2875C6.39215 13.0958 ' +
+      '6.63057 13 6.91499 13H10.9304C11.2149 13 11.4533 13.0958 11.6457 13.2875C11.8381 ' +
+      '13.4792 11.9343 13.7167 11.9343 14V18C11.9343 18.2833 11.8381 18.5208 11.6457 18.7125' +
+      'C11.4533 18.9042 11.2149 19 10.9304 19C10.646 19 10.4076 18.9042 10.2152 18.7125' +
+      'C10.0228 18.5208 9.92658 18.2833 9.92658 18V15ZM15.9497 9H18.9613C19.2458 9 19.4842 ' +
+      '9.09583 19.6766 9.2875C19.869 9.47917 19.9652 9.71667 19.9652 10C19.9652 10.2833 ' +
+      '19.869 10.5208 19.6766 10.7125C19.4842 10.9042 19.2458 11 18.9613 11H14.9459C14.6615 ' +
+      '11 14.423 10.9042 14.2306 10.7125C14.0382 10.5208 13.942 10.2833 13.942 10V6C13.942 ' +
+      '5.71667 14.0382 5.47917 14.2306 5.2875C14.423 5.09583 14.6615 5 14.9459 5C15.2303 5 ' +
+      '15.4687 5.09583 15.6611 5.2875C15.8535 5.47917 15.9497 5.71667 15.9497 6V9Z',
+  ),
 
-  // The same brackets pushed back out to the edges.
-  expand: svg('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/>'),
+  expand: symbol(
+    'M7 17H10C10.2833 17 10.5208 17.0958 10.7125 17.2875C10.9042 17.4792 11 17.7167 11 18' +
+      'C11 18.2833 10.9042 18.5208 10.7125 18.7125C10.5208 18.9042 10.2833 19 10 19H6' +
+      'C5.71667 19 5.47917 18.9042 5.2875 18.7125C5.09583 18.5208 5 18.2833 5 18V14C5 13.7167 ' +
+      '5.09583 13.4792 5.2875 13.2875C5.47917 13.0958 5.71667 13 6 13C6.28333 13 6.52083 ' +
+      '13.0958 6.7125 13.2875C6.90417 13.4792 7 13.7167 7 14V17ZM17 7H14C13.7167 7 13.4792 ' +
+      '6.90417 13.2875 6.7125C13.0958 6.52083 13 6.28333 13 6C13 5.71667 13.0958 5.47917 ' +
+      '13.2875 5.2875C13.4792 5.09583 13.7167 5 14 5H18C18.2833 5 18.5208 5.09583 18.7125 ' +
+      '5.2875C18.9042 5.47917 19 5.71667 19 6V10C19 10.2833 18.9042 10.5208 18.7125 10.7125' +
+      'C18.5208 10.9042 18.2833 11 18 11C17.7167 11 17.4792 10.9042 17.2875 10.7125C17.0958 ' +
+      '10.5208 17 10.2833 17 10V7Z',
+  ),
 };
 
 /**
- * The cursor arrow. The tip sits at (0,0) and the shape points up-left, which
- * is the familiar resting orientation; `ARROW_REST_ANGLE` is that direction in
- * screen degrees, so rotation math can express "point along the heading".
+ * The cursor arrow.
+ *
+ * The supplied file is 32x32 with the arrow occupying the middle ~14 units and
+ * its point at (9.6, 9.6). The viewBox is retargeted so that point sits exactly
+ * at the element's origin — the CSS anchors position, rotation and the tapped
+ * scale there, so the tip stays pinned to the coordinate being addressed. The
+ * white outline that falls outside the box still draws, because the element
+ * sets `overflow: visible`.
  */
-export const ARROW_REST_ANGLE = -112;
-
 export const ARROW_SVG =
-  '<svg viewBox="0 0 13 21" aria-hidden="true" focusable="false">' +
-  '<path d="M0 0 0 16.8 4.3 13 6.8 19.3 9.6 18.2 7.1 12 12 11.6Z" ' +
-  'fill="currentColor" stroke="rgba(255,255,255,0.92)" stroke-width="1.1" ' +
-  'stroke-linejoin="round" paint-order="stroke fill"/>' +
+  '<svg viewBox="9.6 9.6 14 14" fill="none" aria-hidden="true" focusable="false">' +
+  '<path d="M9.40234 11.3525C8.91256 10.1281 10.1281 8.91256 11.3525 9.40234L22.6514 ' +
+  '13.9219C23.9484 14.441 23.8937 16.2954 22.5684 16.7373L18.4326 18.1162C18.2833 18.166 ' +
+  '18.166 18.2833 18.1162 18.4326L16.7373 22.5684C16.2954 23.8937 14.441 23.9484 13.9219 ' +
+  '22.6514L9.40234 11.3525Z" fill="#111111" stroke="white"/>' +
   '</svg>';
-
-/** Aspect ratio of ARROW_SVG, used to size the cursor element. */
-export const ARROW_ASPECT = 21 / 13;

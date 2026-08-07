@@ -168,28 +168,37 @@ export class TouchEmulator {
     this.pressing = true;
     this.dragging = false;
     this.origin = { x, y, t: now, el, internal };
-    this.last = { x, y, t: now };
+    this.last = { x, y };
     this.velocity = { x: 0, y: 0 };
     this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
   }
 
   /** Cursor moved while the pinch is held. */
-  drag(x, y) {
+  drag(x, y, now) {
     if (!this.pressing) return;
 
     const dx = x - this.last.x;
     const dy = y - this.last.y;
-    this.last = { x, y, t: this.last.t };
+    this.last = { x, y };
 
     // Exponential average keeps the fling velocity stable across jittery frames.
     this.velocity.x = this.velocity.x * 0.7 + dx * 0.3;
     this.velocity.y = this.velocity.y * 0.7 + dy * 0.3;
 
     if (!this.dragging) {
+      const { threshold, holdDelay } = this.options.drag;
+      // Closing the pinch moves the hand, so the first moments of every press
+      // carry drift that has nothing to do with intent. Waiting that out is
+      // what lets a deliberate tap stay a tap.
+      if (now - this.origin.t < holdDelay) return;
       const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
-      if (travel < this.options.drag.threshold) return;
+      if (travel < threshold) return;
+
       this.dragging = true;
       this.leaveHovered(x, y);
+      // Fall through, so this frame scrolls by its own delta only. The distance
+      // spent crossing the threshold is deliberately not applied — otherwise
+      // the content would lurch by `threshold` px the instant a drag begins.
     }
 
     if (this.scrollTarget) scrollBy(this.scrollTarget, dx, dy);

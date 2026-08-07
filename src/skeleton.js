@@ -53,17 +53,22 @@ export function drawSkeleton(ctx, points, { pinching = false } = {}) {
  */
 export function handIllustration() {
   const S = 100;
+  // The canonical pose is squatter than the 66x98 frame it has to fill, so the
+  // artwork is drawn on a stretched vertical axis rather than letterboxed.
+  const STRETCH = 1.26;
   const pt = (i) => CANONICAL_HAND[i];
-  const at = (i) => `${(pt(i).x * S).toFixed(2)} ${(pt(i).y * S).toFixed(2)}`;
+  const px = (i) => pt(i).x * S;
+  const py = (i) => pt(i).y * S * STRETCH;
+  const at = (i) => `${px(i).toFixed(2)} ${py(i).toFixed(2)}`;
 
   const bones = CONNECTIONS.map(([a, b]) => `M${at(a)}L${at(b)}`).join('');
   const palm = `M${PALM.map(at).join('L')}Z`;
   const tips = [4, 8, 12, 16, 20]
-    .map((i) => `<circle cx="${(pt(i).x * S).toFixed(2)}" cy="${(pt(i).y * S).toFixed(2)}" r="6"/>`)
+    .map((i) => `<circle cx="${px(i).toFixed(2)}" cy="${py(i).toFixed(2)}" r="6"/>`)
     .join('');
   const joints = CANONICAL_HAND.map(
-    (p) =>
-      `<rect x="${(p.x * S - 1.6).toFixed(2)}" y="${(p.y * S - 1.6).toFixed(2)}" width="3.2" height="3.2"/>`,
+    (_, i) =>
+      `<rect x="${(px(i) - 1.6).toFixed(2)}" y="${(py(i) - 1.6).toFixed(2)}" width="3.2" height="3.2"/>`,
   ).join('');
 
   // A single flat tone rather than a translucent one: overlapping strokes would
@@ -71,7 +76,9 @@ export function handIllustration() {
   const skin = '#E4E4E4';
 
   return (
-    `<svg class="hc-illo-svg" viewBox="0 0 ${S} ${S}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">` +
+    // Cropped to the hand itself rather than the 0..1 landmark box, so the
+    // artwork fills the 66x98 frame instead of floating in it.
+    `<svg class="hc-illo-svg" viewBox="9 7 82 122" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">` +
     `<g fill="${skin}">` +
     `<path d="${palm}"/>${tips}` +
     `<path d="${bones}" fill="none" stroke="${skin}" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>` +

@@ -213,8 +213,18 @@
             <em>Higher clicks sooner, at the cost of false positives.</em>
           </label>
           <label class="slider">
-            <span><span>Cursor size</span><b id="v-size">18px</b></span>
-            <input type="range" id="s-size" min="12" max="40" step="1" value="18" />
+            <span><span>Scroll threshold</span><b id="v-drag">34px</b></span>
+            <input type="range" id="s-drag" min="6" max="80" step="2" value="34" />
+            <em>How far a pinch must travel before it scrolls instead of clicking.</em>
+          </label>
+          <label class="slider">
+            <span><span>Cursor sway</span><b id="v-sway">15&deg;</b></span>
+            <input type="range" id="s-sway" min="0" max="45" step="1" value="15" />
+            <em>Maximum lean into the direction of travel.</em>
+          </label>
+          <label class="slider">
+            <span><span>Cursor size</span><b id="v-size">20px</b></span>
+            <input type="range" id="s-size" min="12" max="48" step="1" value="20" />
             <em>Purely cosmetic.</em>
           </label>
         </div>

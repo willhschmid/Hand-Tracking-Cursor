@@ -37,17 +37,36 @@ var DEFAULTS = {
    * hysteresis so a hovering hand does not chatter between states.
    */
   pinch: { on: 0.42, off: 0.55 },
-  /** A press shorter and tighter than this counts as a tap. */
-  tap: { maxDuration: 500, maxTravel: 14 },
-  /** Press-and-drag scrolling, with a touch-style fling on release. */
-  drag: { threshold: 10, friction: 0.94, minVelocity: 0.4, maxVelocity: 60 },
-  /** The playful bit: the arrow leans into the direction it travels. */
+  /**
+   * A press shorter and tighter than this counts as a tap. Both numbers are
+   * generous compared to a touchscreen: a pinch held in mid-air always drifts a
+   * little, and the gesture itself takes longer than a finger on glass.
+   */
+  tap: { maxDuration: 800, maxTravel: 32 },
+  /**
+   * Press-and-drag scrolling, with a touch-style fling on release.
+   *
+   * `threshold` and `holdDelay` are what keep a tap from turning into a scroll:
+   * the pinch has to travel a real distance *and* be held past the moment of
+   * pinching before anything scrolls.
+   */
+  drag: {
+    threshold: 34,
+    holdDelay: 140,
+    friction: 0.94,
+    minVelocity: 0.4,
+    maxVelocity: 60
+  },
+  /**
+   * The playful bit: the arrow leans into the direction it travels, capped so
+   * it sways rather than spins.
+   */
   rotation: {
     enabled: true,
-    minSpeed: 0.35,
-    smoothing: 0.2,
-    idleDelay: 350,
-    returnSmoothing: 0.08
+    maxAngle: 15,
+    gain: 1.2,
+    minSpeed: 0.6,
+    smoothing: 0.12
   },
   /** Cursor sizing. `pressScale` is the tapped state from the spec. */
   cursor: { scale: 1, pressScale: 0.85 },
@@ -121,12 +140,15 @@ var SIZE = {
   pad: 12,
   gap: 12,
   cornerInset: 4,
-  cornerButton: 24,
-  iconSize: 16,
+  cornerButton: 32,
+  iconSize: 24,
   ctaHeight: 32,
   ctaPadX: 12,
   ctaGap: 8,
-  miniCta: 32
+  miniCta: 32,
+  /** The hand illustration on the pre-enabled card. */
+  illoWidth: 66,
+  illoHeight: 98
 };
 var FONT_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap";
 
@@ -159,8 +181,7 @@ var CSS = `
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: ${SIZE.gap}px;
+  justify-content: space-between;
   background: ${COLOR.lightGray};
   border-radius: ${RADIUS.card}px;
   overflow: hidden;
@@ -184,22 +205,23 @@ var CSS = `
   width: ${SIZE.miniSize}px;
   height: ${SIZE.miniSize}px;
   padding: 0;
-  gap: 0;
 }
 
 .hc-root[data-state="live"] .hc-panel {
   padding: 0;
-  gap: 0;
-  background: ${COLOR.black};
+  background: ${COLOR.lightGray};
 }
 
 /* ---------------------------------------------------------------- stage -- */
 
 .hc-stage {
   position: relative;
-  flex: 1 1 auto;
-  width: 100%;
-  min-height: 0;
+  /* Fixed at the illustration's size; the card distributes what is left over.
+     A 98px illustration, two lines of copy and a 32px button do not leave room
+     for 12px gaps inside 200px, so the gaps are what give. */
+  flex: 0 0 auto;
+  width: ${SIZE.illoWidth}px;
+  height: ${SIZE.illoHeight}px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -209,7 +231,8 @@ var CSS = `
 .hc-root[data-mini="true"] .hc-stage {
   position: absolute;
   inset: 0;
-  flex: none;
+  width: auto;
+  height: auto;
 }
 
 .hc-video,
@@ -225,6 +248,9 @@ var CSS = `
   object-fit: cover;
   transform: scaleX(-1);
   filter: var(--hc-video-filter, none);
+  /* Knocked right back so the dark icons and the skeleton stay legible over
+     the #F6F6F6 card behind it. */
+  opacity: var(--hc-video-opacity, 0.15);
 }
 
 .hc-root[data-state="live"] .hc-video,
@@ -329,14 +355,6 @@ var CSS = `
 
 .hc-root[data-state="live"] .hc-corner--tl { display: inline-flex; }
 
-.hc-root[data-state="live"] .hc-corner {
-  color: ${COLOR.white};
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
-}
-
-.hc-root[data-state="live"] .hc-corner:hover,
-.hc-root[data-state="live"] .hc-corner.hc-hover { background: rgba(255, 255, 255, 0.16); }
-
 /* ------------------------------------------------------- minimized cta -- */
 
 .hc-mini-cta {
@@ -350,7 +368,7 @@ var CSS = `
   transition: background-color 150ms linear, transform 120ms ease-out;
 }
 
-.hc-mini-cta svg { width: 18px; height: 18px; }
+.hc-mini-cta svg { width: ${SIZE.iconSize}px; height: ${SIZE.iconSize}px; }
 .hc-mini-cta:hover,
 .hc-mini-cta.hc-hover { background: ${COLOR.darkGreen}; }
 .hc-mini-cta:active { transform: scale(0.94); }
@@ -364,7 +382,7 @@ var CSS = `
 
 .hc-root[data-mini="true"][data-state="live"] .hc-mini-cta:hover,
 .hc-root[data-mini="true"][data-state="live"] .hc-mini-cta.hc-hover {
-  background: ${COLOR.lightGray};
+  background: ${COLOR.border};
 }
 
 .hc-root[data-mini="true"][data-state="loading"] .hc-mini-cta { opacity: 0.7; }
@@ -389,8 +407,8 @@ var CSS = `
   position: fixed;
   top: 0;
   left: 0;
-  width: var(--hc-cursor-w, 18px);
-  aspect-ratio: 13 / 21;
+  width: var(--hc-cursor-w, 20px);
+  aspect-ratio: 1;
   /* The arrow tip sits at the element's origin, so rotation and the tapped
      scale both pivot on the exact point being addressed. */
   transform-origin: 0 0;
@@ -400,7 +418,9 @@ var CSS = `
   transition: opacity 160ms linear;
 }
 
-.hc-cursor svg { width: 100%; height: 100%; overflow: visible; }
+/* display:block matters here: an inline svg sits on a text baseline and picks
+   up descender space, which made the element taller than its aspect-ratio. */
+.hc-cursor svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
 .hc-cursor[data-visible="true"] { opacity: 1; }
 
@@ -433,20 +453,22 @@ var CSS = `
 `;
 
 // src/icons.js
-var svg = (body) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
-var CAMERA_BODY = '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="M16 10.6 21 7v10l-5-3.6z"/>';
+var symbol = (d) => `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="${d}" fill="currentColor"/></svg>`;
 var ICONS = {
-  videocam: svg(CAMERA_BODY),
-  videocamOff: svg(`${CAMERA_BODY}<path d="M3.5 3.5 20.5 20.5"/>`),
-  // Two corner brackets pulled in toward the middle. The 6-unit offset from the
-  // centre line keeps them from merging into a plus sign at 16px.
-  collapse: svg('<path d="M15 3v6h6"/><path d="M9 21v-6H3"/>'),
-  // The same brackets pushed back out to the edges.
-  expand: svg('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/>')
+  videocam: symbol(
+    "M4 20C3.45 20 2.97917 19.8042 2.5875 19.4125C2.19583 19.0208 2 18.55 2 18V6C2 5.45 2.19583 4.97917 2.5875 4.5875C2.97917 4.19583 3.45 4 4 4H16C16.55 4 17.0208 4.19583 17.4125 4.5875C17.8042 4.97917 18 5.45 18 6V10.5L21.15 7.35C21.3167 7.18333 21.5 7.14167 21.7 7.225C21.9 7.30833 22 7.46667 22 7.7V16.3C22 16.5333 21.9 16.6917 21.7 16.775C21.5 16.8583 21.3167 16.8167 21.15 16.65L18 13.5V18C18 18.55 17.8042 19.0208 17.4125 19.4125C17.0208 19.8042 16.55 20 16 20H4ZM4 18H16V6H4V18Z"
+  ),
+  videocamOff: symbol(
+    "M18.0002 10.5L21.1502 7.35001C21.3169 7.18334 21.5002 7.14167 21.7002 7.22501C21.9002 7.30834 22.0002 7.46667 22.0002 7.70001V16.3C22.0002 16.5333 21.9002 16.6917 21.7002 16.775C21.5002 16.8583 21.3169 16.8167 21.1502 16.65L18.0002 13.5C18.0002 13.7833 17.9044 14.0208 17.7127 14.2125C17.521 14.4042 17.2835 14.5 17.0002 14.5C16.7169 14.5 16.4794 14.4042 16.2877 14.2125C16.096 14.0208 16.0002 13.7833 16.0002 13.5V6.00001H9.0002C8.66686 6.00001 8.41686 5.89584 8.2502 5.68751C8.08353 5.47917 8.0002 5.25001 8.0002 5.00001C8.0002 4.75001 8.08353 4.52084 8.2502 4.31251C8.41686 4.10417 8.66686 4.00001 9.0002 4.00001H16.0002C16.5502 4.00001 17.021 4.19584 17.4127 4.58751C17.8044 4.97917 18.0002 5.45001 18.0002 6.00001V10.5ZM19.8502 22.65L1.3502 4.15001C1.16686 3.96667 1.0752 3.73334 1.0752 3.45001C1.0752 3.16667 1.16686 2.93334 1.3502 2.75001C1.53353 2.56667 1.76686 2.47501 2.0502 2.47501C2.33353 2.47501 2.56686 2.56667 2.7502 2.75001L21.2502 21.25C21.4335 21.4333 21.5252 21.6667 21.5252 21.95C21.5252 22.2333 21.4335 22.4667 21.2502 22.65C21.0669 22.8333 20.8335 22.925 20.5502 22.925C20.2669 22.925 20.0335 22.8333 19.8502 22.65ZM4.0002 4.00001L6.0002 6.00001H4.0002V18H16.0002V16L18.0002 18C18.0002 18.55 17.8044 19.0208 17.4127 19.4125C17.021 19.8042 16.5502 20 16.0002 20H4.0002C3.4502 20 2.97936 19.8042 2.5877 19.4125C2.19603 19.0208 2.0002 18.55 2.0002 18V6.00001C2.0002 5.45001 2.19603 4.97917 2.5877 4.58751C2.97936 4.19584 3.4502 4.00001 4.0002 4.00001Z"
+  ),
+  collapse: symbol(
+    "M9.92658 15H6.91499C6.63057 15 6.39215 14.9042 6.19974 14.7125C6.00734 14.5208 5.91113 14.2833 5.91113 14C5.91113 13.7167 6.00734 13.4792 6.19974 13.2875C6.39215 13.0958 6.63057 13 6.91499 13H10.9304C11.2149 13 11.4533 13.0958 11.6457 13.2875C11.8381 13.4792 11.9343 13.7167 11.9343 14V18C11.9343 18.2833 11.8381 18.5208 11.6457 18.7125C11.4533 18.9042 11.2149 19 10.9304 19C10.646 19 10.4076 18.9042 10.2152 18.7125C10.0228 18.5208 9.92658 18.2833 9.92658 18V15ZM15.9497 9H18.9613C19.2458 9 19.4842 9.09583 19.6766 9.2875C19.869 9.47917 19.9652 9.71667 19.9652 10C19.9652 10.2833 19.869 10.5208 19.6766 10.7125C19.4842 10.9042 19.2458 11 18.9613 11H14.9459C14.6615 11 14.423 10.9042 14.2306 10.7125C14.0382 10.5208 13.942 10.2833 13.942 10V6C13.942 5.71667 14.0382 5.47917 14.2306 5.2875C14.423 5.09583 14.6615 5 14.9459 5C15.2303 5 15.4687 5.09583 15.6611 5.2875C15.8535 5.47917 15.9497 5.71667 15.9497 6V9Z"
+  ),
+  expand: symbol(
+    "M7 17H10C10.2833 17 10.5208 17.0958 10.7125 17.2875C10.9042 17.4792 11 17.7167 11 18C11 18.2833 10.9042 18.5208 10.7125 18.7125C10.5208 18.9042 10.2833 19 10 19H6C5.71667 19 5.47917 18.9042 5.2875 18.7125C5.09583 18.5208 5 18.2833 5 18V14C5 13.7167 5.09583 13.4792 5.2875 13.2875C5.47917 13.0958 5.71667 13 6 13C6.28333 13 6.52083 13.0958 6.7125 13.2875C6.90417 13.4792 7 13.7167 7 14V17ZM17 7H14C13.7167 7 13.4792 6.90417 13.2875 6.7125C13.0958 6.52083 13 6.28333 13 6C13 5.71667 13.0958 5.47917 13.2875 5.2875C13.4792 5.09583 13.7167 5 14 5H18C18.2833 5 18.5208 5.09583 18.7125 5.2875C18.9042 5.47917 19 5.71667 19 6V10C19 10.2833 18.9042 10.5208 18.7125 10.7125C18.5208 10.9042 18.2833 11 18 11C17.7167 11 17.4792 10.9042 17.2875 10.7125C17.0958 10.5208 17 10.2833 17 10V7Z"
+  )
 };
-var ARROW_REST_ANGLE = -112;
-var ARROW_SVG = '<svg viewBox="0 0 13 21" aria-hidden="true" focusable="false"><path d="M0 0 0 16.8 4.3 13 6.8 19.3 9.6 18.2 7.1 12 12 11.6Z" fill="currentColor" stroke="rgba(255,255,255,0.92)" stroke-width="1.1" stroke-linejoin="round" paint-order="stroke fill"/></svg>';
-var ARROW_ASPECT = 21 / 13;
+var ARROW_SVG = '<svg viewBox="9.6 9.6 14 14" fill="none" aria-hidden="true" focusable="false"><path d="M9.40234 11.3525C8.91256 10.1281 10.1281 8.91256 11.3525 9.40234L22.6514 13.9219C23.9484 14.441 23.8937 16.2954 22.5684 16.7373L18.4326 18.1162C18.2833 18.166 18.166 18.2833 18.1162 18.4326L16.7373 22.5684C16.2954 23.8937 14.441 23.9484 13.9219 22.6514L9.40234 11.3525Z" fill="#111111" stroke="white"/></svg>';
 
 // src/landmarks.js
 var WRIST = 0;
@@ -578,16 +600,23 @@ function drawSkeleton(ctx, points, { pinching = false } = {}) {
 }
 function handIllustration() {
   const S = 100;
+  const STRETCH = 1.26;
   const pt = (i) => CANONICAL_HAND[i];
-  const at = (i) => `${(pt(i).x * S).toFixed(2)} ${(pt(i).y * S).toFixed(2)}`;
+  const px = (i) => pt(i).x * S;
+  const py = (i) => pt(i).y * S * STRETCH;
+  const at = (i) => `${px(i).toFixed(2)} ${py(i).toFixed(2)}`;
   const bones = CONNECTIONS.map(([a, b]) => `M${at(a)}L${at(b)}`).join("");
   const palm = `M${PALM.map(at).join("L")}Z`;
-  const tips = [4, 8, 12, 16, 20].map((i) => `<circle cx="${(pt(i).x * S).toFixed(2)}" cy="${(pt(i).y * S).toFixed(2)}" r="6"/>`).join("");
+  const tips = [4, 8, 12, 16, 20].map((i) => `<circle cx="${px(i).toFixed(2)}" cy="${py(i).toFixed(2)}" r="6"/>`).join("");
   const joints = CANONICAL_HAND.map(
-    (p) => `<rect x="${(p.x * S - 1.6).toFixed(2)}" y="${(p.y * S - 1.6).toFixed(2)}" width="3.2" height="3.2"/>`
+    (_, i) => `<rect x="${(px(i) - 1.6).toFixed(2)}" y="${(py(i) - 1.6).toFixed(2)}" width="3.2" height="3.2"/>`
   ).join("");
   const skin = "#E4E4E4";
-  return `<svg class="hc-illo-svg" viewBox="0 0 ${S} ${S}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><g fill="${skin}"><path d="${palm}"/>${tips}<path d="${bones}" fill="none" stroke="${skin}" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/></g><path d="${bones}" fill="none" stroke="${COLOR.purple}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M${at(INDEX_TIP)}L${at(THUMB_TIP)}" fill="none" stroke="${COLOR.green}" stroke-width="1.4" stroke-dasharray="3 3" stroke-linecap="round"/><g fill="${COLOR.purple}">${joints}</g></svg>`;
+  return (
+    // Cropped to the hand itself rather than the 0..1 landmark box, so the
+    // artwork fills the 66x98 frame instead of floating in it.
+    `<svg class="hc-illo-svg" viewBox="9 7 82 122" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><g fill="${skin}"><path d="${palm}"/>${tips}<path d="${bones}" fill="none" stroke="${skin}" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/></g><path d="${bones}" fill="none" stroke="${COLOR.purple}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M${at(INDEX_TIP)}L${at(THUMB_TIP)}" fill="none" stroke="${COLOR.green}" stroke-width="1.4" stroke-dasharray="3 3" stroke-linecap="round"/><g fill="${COLOR.purple}">${joints}</g></svg>`
+  );
 }
 
 // src/panel.js
@@ -730,7 +759,7 @@ var Panel = class {
 };
 
 // src/cursor.js
-var shortestDelta = (from, to) => ((to - from) % 360 + 540) % 360 - 180;
+var clamp = (v, min, max) => v < min ? min : v > max ? max : v;
 var Cursor = class {
   constructor(options) {
     this.options = options;
@@ -770,15 +799,8 @@ var Cursor = class {
     this.y = y;
     const rotation = this.options.rotation;
     if (rotation.enabled && !this.reducedMotion) {
-      const speed = Math.hypot(vx, vy);
-      if (speed >= rotation.minSpeed) {
-        this.lastMoveAt = now;
-        const heading = Math.atan2(vy, vx) * 180 / Math.PI;
-        const target = heading - ARROW_REST_ANGLE;
-        this.angle += shortestDelta(this.angle, target) * rotation.smoothing;
-      } else if (now - this.lastMoveAt > rotation.idleDelay) {
-        this.angle += shortestDelta(this.angle, 0) * rotation.returnSmoothing;
-      }
+      const target = Math.abs(vx) < rotation.minSpeed ? 0 : clamp(vx * rotation.gain, -rotation.maxAngle, rotation.maxAngle);
+      this.angle += (target - this.angle) * rotation.smoothing;
     } else {
       this.angle = 0;
     }
@@ -928,21 +950,23 @@ var TouchEmulator = class {
     this.pressing = true;
     this.dragging = false;
     this.origin = { x, y, t: now, el, internal };
-    this.last = { x, y, t: now };
+    this.last = { x, y };
     this.velocity = { x: 0, y: 0 };
     this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
   }
   /** Cursor moved while the pinch is held. */
-  drag(x, y) {
+  drag(x, y, now) {
     if (!this.pressing) return;
     const dx = x - this.last.x;
     const dy = y - this.last.y;
-    this.last = { x, y, t: this.last.t };
+    this.last = { x, y };
     this.velocity.x = this.velocity.x * 0.7 + dx * 0.3;
     this.velocity.y = this.velocity.y * 0.7 + dy * 0.3;
     if (!this.dragging) {
+      const { threshold, holdDelay } = this.options.drag;
+      if (now - this.origin.t < holdDelay) return;
       const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
-      if (travel < this.options.drag.threshold) return;
+      if (travel < threshold) return;
       this.dragging = true;
       this.leaveHovered(x, y);
     }
@@ -991,9 +1015,9 @@ var TouchEmulator = class {
   }
   startMomentum() {
     const { friction, minVelocity, maxVelocity } = this.options.drag;
-    const clamp = (v) => Math.max(-maxVelocity, Math.min(maxVelocity, v));
-    let vx = clamp(this.velocity.x);
-    let vy = clamp(this.velocity.y);
+    const clamp2 = (v) => Math.max(-maxVelocity, Math.min(maxVelocity, v));
+    let vx = clamp2(this.velocity.x);
+    let vy = clamp2(this.velocity.y);
     const target = this.scrollTarget;
     if (!target || Math.hypot(vx, vy) < minVelocity) return;
     const step = () => {
