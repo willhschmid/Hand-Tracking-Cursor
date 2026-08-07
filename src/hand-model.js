@@ -45,6 +45,23 @@ export async function createHandLandmarker({ cdn, numHands, delegate }) {
   }
 }
 
+/**
+ * Same as above, but any failure is tagged `model` so the trackpad can tell a
+ * blocked CDN apart from a denied camera — by far the most common two ways this
+ * fails, and they need completely different fixes.
+ */
+export async function loadModel(config) {
+  try {
+    return await createHandLandmarker(config);
+  } catch (error) {
+    console.error('[hand-cursor] could not load the MediaPipe model', error);
+    throw Object.assign(
+      error instanceof Error ? error : new Error(String(error)),
+      { code: 'model' },
+    );
+  }
+}
+
 /** Opens the camera and returns a video element that is already playing. */
 export async function openCamera({ width, height, frameRate }) {
   if (!window.isSecureContext) {

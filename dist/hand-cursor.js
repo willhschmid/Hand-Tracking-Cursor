@@ -46,6 +46,8 @@ var HandCursor = (() => {
     font: true,
     /** Hide the OS cursor while a hand is being tracked. */
     hideNativeCursor: false,
+    /** Mirror the page's CSS :hover rules so they respond to the hand cursor. */
+    emulateHover: true,
     /** Stacking order of the overlay root. */
     zIndex: 2147483e3,
     /** Hands to track. Only the first one drives the cursor. */
@@ -99,6 +101,7 @@ var HandCursor = (() => {
       insecure: "Camera access needs a secure (https) connection.",
       denied: "Camera permission was denied. Allow access and try again.",
       missing: "No camera was found on this device.",
+      model: "The hand tracking model could not load. Check your connection.",
       failed: "Hand tracking could not start. Please try again."
     }
   };
@@ -659,8 +662,8 @@ var HandCursor = (() => {
       this.cornerLeft.innerHTML = ICONS.videocamOff;
       this.cornerLeft.title = options.strings.disable;
       this.cornerLeft.setAttribute("aria-label", options.strings.disable);
-      this.cta.addEventListener("click", () => handlers.onToggleCamera());
-      this.miniCta.addEventListener("click", () => handlers.onToggleCamera());
+      this.cta.addEventListener("click", (event) => handlers.onToggleCamera(event));
+      this.miniCta.addEventListener("click", (event) => handlers.onToggleCamera(event));
       this.cornerLeft.addEventListener("click", () => handlers.onStop());
       this.cornerRight.addEventListener("click", () => handlers.onToggleSize());
       this.render();
@@ -887,15 +890,14 @@ var HandCursor = (() => {
     /**
      * @param {object} options    resolved config
      * @param {object} hooks
-     * @param {ShadowRoot} hooks.shadowRoot  the trackpad's own root, so taps on
-     *                                       its buttons are handled directly
-     *                                       instead of being synthesized
+     * @param {OwnUi} [hooks.ui]  the trackpad's own chrome
      * @param {Function} [hooks.onTap]
      */
-    constructor(options, { shadowRoot, onTap } = {}) {
+    constructor(options, { ui, onTap, hover } = {}) {
       this.options = options;
-      this.shadowRoot = shadowRoot;
+      this.ui = ui;
       this.onTap = onTap;
+      this.hoverStyles = hover;
       this.hovered = null;
       this.pressing = false;
       this.dragging = false;
@@ -904,24 +906,23 @@ var HandCursor = (() => {
       this.velocity = { x: 0, y: 0 };
       this.scrollTarget = null;
       this.momentumFrame = null;
-      this.internalHover = null;
     }
     /**
      * What is under the cursor, and whether that is the trackpad itself.
      *
-     * `deepElementFromPoint` walks into our own shadow root too, so the check for
-     * "internal" is simply whether the result lives inside it. Asking the shadow
-     * root directly would not work: `ShadowRoot.elementFromPoint` retargets, and
-     * happily hands back elements from the host page.
+     * `deepElementFromPoint` walks into open shadow roots, including our own, so
+     * the ownership question is just "does the UI claim this element". Asking a
+     * shadow root directly would not work: `ShadowRoot.elementFromPoint`
+     * retargets, and happily hands back elements from the host page.
      */
     resolve(x, y) {
       const el = deepElementFromPoint(x, y);
-      return { el, internal: Boolean(el && this.shadowRoot?.contains(el)) };
+      return { el, internal: Boolean(this.ui?.contains(el)) };
     }
     /** Keeps hover styles and pointer-position listeners on the page in sync. */
     move(x, y) {
       const { el, internal } = this.resolve(x, y);
-      this.setInternalHover(internal ? el.closest?.("button") : null);
+      this.ui?.hover(internal ? el : null, x, y);
       if (internal || !el) {
         this.leaveHovered(x, y);
         return;
@@ -929,6 +930,7 @@ var HandCursor = (() => {
       if (el !== this.hovered) {
         this.leaveHovered(x, y);
         this.hovered = el;
+        this.hoverStyles?.set(el);
         firePointer(el, "pointerover", x, y, { buttons: this.pressing ? 1 : 0 });
         fireMouse(el, "mouseover", x, y, { buttons: this.pressing ? 1 : 0 });
         el.dispatchEvent(
@@ -938,17 +940,11 @@ var HandCursor = (() => {
       firePointer(el, "pointermove", x, y, { buttons: this.pressing ? 1 : 0 });
       fireMouse(el, "mousemove", x, y, { buttons: this.pressing ? 1 : 0 });
     }
-    /** CSS :hover never fires for a synthetic cursor, so fake it on our own buttons. */
-    setInternalHover(button) {
-      if (this.internalHover === button) return;
-      this.internalHover?.classList.remove("hc-hover");
-      button?.classList.add("hc-hover");
-      this.internalHover = button || null;
-    }
     leaveHovered(x, y) {
       const previous = this.hovered;
       if (!previous) return;
       this.hovered = null;
+      this.hoverStyles?.clear();
       firePointer(previous, "pointerout", x, y, { buttons: 0 });
       fireMouse(previous, "mouseout", x, y, { buttons: 0 });
       previous.dispatchEvent(
@@ -1003,8 +999,7 @@ var HandCursor = (() => {
       const { el, internal } = this.resolve(x, y);
       if (!el) return;
       if (internal) {
-        const target = el.closest?.("button");
-        if (target && !target.disabled) target.click();
+        this.ui.tap(el, x, y);
         this.onTap?.({ x, y, target: el, internal: true });
         return;
       }
@@ -1056,7 +1051,7 @@ var HandCursor = (() => {
       this.dragging = false;
       this.origin = null;
       this.scrollTarget = null;
-      this.setInternalHover(null);
+      this.ui?.hover(null, x, y);
       this.leaveHovered(x, y);
     }
     destroy() {
@@ -1116,6 +1111,211 @@ var HandCursor = (() => {
     }
   };
 
+  // src/hover.js
+  var ATTR = "data-hc-hover";
+  var mirror = (selector) => selector.replace(/:hover\b/g, `[${ATTR}]`);
+  function collect(rules, out) {
+    for (const rule of rules) {
+      if (rule.selectorText) {
+        if (rule.selectorText.includes(":hover")) {
+          out.push(`${mirror(rule.selectorText)}{${rule.style.cssText}}`);
+        }
+      } else if (rule.media) {
+        const inner = [];
+        collect(rule.cssRules, inner);
+        if (inner.length) out.push(`@media ${rule.conditionText}{${inner.join("")}}`);
+      } else if (rule.conditionText && rule.cssRules) {
+        const inner = [];
+        collect(rule.cssRules, inner);
+        if (inner.length) out.push(`@supports ${rule.conditionText}{${inner.join("")}}`);
+      }
+    }
+  }
+  var HoverEmulator = class {
+    constructor() {
+      this.style = null;
+      this.chain = [];
+      this.sheetCount = -1;
+      this.warned = false;
+      this.observer = null;
+    }
+    /** Scans the page's stylesheets and (re)writes the mirrored rules. */
+    build() {
+      const rules = [];
+      let blocked = 0;
+      for (const sheet of document.styleSheets) {
+        if (sheet.ownerNode === this.style) continue;
+        try {
+          collect(sheet.cssRules, rules);
+        } catch {
+          blocked += 1;
+        }
+      }
+      if (blocked && !this.warned) {
+        this.warned = true;
+        console.info(
+          `[hand-cursor] ${blocked} cross-origin stylesheet(s) could not be read, so their :hover styles will not respond to the hand cursor.`
+        );
+      }
+      if (!this.style) {
+        this.style = document.createElement("style");
+        this.style.setAttribute("data-hand-cursor-hover", "");
+      }
+      this.style.textContent = rules.join("\n");
+      document.head.appendChild(this.style);
+      this.sheetCount = document.styleSheets.length;
+      if (!this.observer) this.watch();
+    }
+    /** Rebuilds when a single-page app swaps its styles in. */
+    watch() {
+      let pending = 0;
+      this.observer = new MutationObserver(() => {
+        if (document.styleSheets.length === this.sheetCount) return;
+        clearTimeout(pending);
+        pending = setTimeout(() => this.build(), 250);
+      });
+      this.observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+      });
+    }
+    /** Marks `el` and its ancestors as hovered. */
+    set(el) {
+      if (this.chain[0] === el) return;
+      const next = [];
+      for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+        next.push(node);
+      }
+      for (const node of this.chain) {
+        if (!next.includes(node)) node.removeAttribute(ATTR);
+      }
+      for (const node of next) node.setAttribute(ATTR, "");
+      this.chain = next;
+    }
+    clear() {
+      for (const node of this.chain) node.removeAttribute(ATTR);
+      this.chain = [];
+    }
+    destroy() {
+      this.clear();
+      this.observer?.disconnect();
+      this.observer = null;
+      this.style?.remove();
+      this.style = null;
+    }
+  };
+
+  // src/driver.js
+  var clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+  var CursorDriver = class {
+    /**
+     * @param {object} options            resolved config
+     * @param {object} hooks
+     * @param {import('./pointer.js').OwnUi} hooks.ui  the trackpad's own chrome
+     * @param {Function} [hooks.onEvent]  (type, detail) for every gesture
+     */
+    constructor(options, { ui, onEvent } = {}) {
+      this.options = options;
+      this.onEvent = onEvent;
+      this.cursor = new Cursor(options);
+      this.hoverStyles = options.emulateHover ? new HoverEmulator() : null;
+      this.touch = new TouchEmulator(options, {
+        ui,
+        hover: this.hoverStyles,
+        onTap: (detail) => this.emit("tap", detail)
+      });
+      this.filter = new PointFilter(options.smoothing);
+      this.position = null;
+      this.velocity = { x: 0, y: 0 };
+      this.pinching = false;
+      this.lastFrameAt = 0;
+    }
+    mount(parent) {
+      this.cursor.mount(parent);
+    }
+    emit(type, detail) {
+      this.onEvent?.(type, detail);
+    }
+    /**
+     * One tracked frame.
+     *
+     * @param {Array<{x:number,y:number}>} landmarks  normalized to the camera frame
+     * @param {number} now      timestamp, ms
+     * @param {number} aspect   camera frame width / height
+     */
+    consume(landmarks, now, aspect = 1) {
+      const dt = this.lastFrameAt ? (now - this.lastFrameAt) / 1e3 : 1 / 60;
+      this.lastFrameAt = now;
+      const point = controlPoint(landmarks);
+      const region = this.options.region;
+      const nx = clamp01((1 - point.x - region.x) / (1 - 2 * region.x));
+      const ny = clamp01((point.y - region.y) / (1 - 2 * region.y));
+      const smoothed = this.filter.filter(
+        nx * window.innerWidth,
+        ny * window.innerHeight,
+        dt
+      );
+      const previous = this.position;
+      this.position = smoothed;
+      this.velocity = previous ? { x: smoothed.x - previous.x, y: smoothed.y - previous.y } : { x: 0, y: 0 };
+      this.cursor.setVisible(true);
+      this.cursor.update(smoothed.x, smoothed.y, this.velocity.x, this.velocity.y, now);
+      const ratio = pinchRatio(landmarks, aspect);
+      const { on, off } = this.options.pinch;
+      const pinching = this.pinching ? ratio < off : ratio < on;
+      if (pinching && !this.pinching) {
+        this.pinching = true;
+        this.cursor.setPressed(true);
+        this.touch.press(smoothed.x, smoothed.y, now);
+        this.emit("press", { x: smoothed.x, y: smoothed.y });
+      } else if (!pinching && this.pinching) {
+        this.pinching = false;
+        this.cursor.setPressed(false);
+        this.touch.release(smoothed.x, smoothed.y, now);
+        this.emit("release", { x: smoothed.x, y: smoothed.y });
+      }
+      if (this.pinching) {
+        this.touch.drag(smoothed.x, smoothed.y, now);
+      } else {
+        this.touch.move(smoothed.x, smoothed.y);
+      }
+      this.emit("move", { x: smoothed.x, y: smoothed.y, pinching: this.pinching });
+      return { x: smoothed.x, y: smoothed.y, pinching: this.pinching };
+    }
+    /** The hand left the frame, or tracking stopped. */
+    release() {
+      if (this.position) this.touch.cancel(this.position.x, this.position.y);
+      else this.touch.cancel();
+      this.pinching = false;
+      this.position = null;
+      this.lastFrameAt = 0;
+      this.filter.reset();
+      this.cursor.setPressed(false);
+      this.cursor.setVisible(false);
+    }
+    reset() {
+      this.filter.reset();
+      this.cursor.reset();
+      this.lastFrameAt = 0;
+    }
+    /** Rebuilds the filter so smoothing can be tuned while tracking is running. */
+    setSmoothing(smoothing) {
+      this.options.smoothing = { ...this.options.smoothing, ...smoothing };
+      this.filter = new PointFilter(this.options.smoothing);
+      this.lastFrameAt = 0;
+    }
+    /** Mirrors the page's :hover rules. Called once the camera is live, by which
+     *  point late-loading stylesheets have generally settled. */
+    prepareHoverStyles() {
+      this.hoverStyles?.build();
+    }
+    destroy() {
+      this.touch.destroy();
+      this.cursor.destroy();
+      this.hoverStyles?.destroy();
+    }
+  };
+
   // src/hand-model.js
   var visionModulePromise = null;
   function loadVision(url) {
@@ -1152,6 +1352,17 @@ var HandCursor = (() => {
       return build("CPU");
     }
   }
+  async function loadModel(config) {
+    try {
+      return await createHandLandmarker(config);
+    } catch (error) {
+      console.error("[hand-cursor] could not load the MediaPipe model", error);
+      throw Object.assign(
+        error instanceof Error ? error : new Error(String(error)),
+        { code: "model" }
+      );
+    }
+  }
   async function openCamera({ width, height, frameRate }) {
     if (!window.isSecureContext) {
       throw Object.assign(new Error("insecure context"), { code: "insecure" });
@@ -1183,7 +1394,6 @@ var HandCursor = (() => {
 
   // src/controller.js
   var HAND_TIMEOUT = 400;
-  var clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
   var HandCursorController = class {
     constructor(userOptions = {}) {
       this.options = mergeOptions(DEFAULTS, userOptions);
@@ -1199,13 +1409,11 @@ var HandCursor = (() => {
         onToggleSize: () => this.setMinimized(!this.panel.mini)
       });
       this.panel.mount(this.shadow);
-      this.cursor = new Cursor(this.options);
-      this.cursor.mount(this.panel.root);
-      this.touch = new TouchEmulator(this.options, {
-        shadowRoot: this.shadow,
-        onTap: (detail) => this.emit("tap", detail)
+      this.driver = new CursorDriver(this.options, {
+        ui: shadowUi(this.shadow),
+        onEvent: (type, detail) => this.emit(type, detail)
       });
-      this.filter = new PointFilter(this.options.smoothing);
+      this.driver.mount(this.panel.root);
       this.running = false;
       this.starting = false;
       this.destroyed = false;
@@ -1213,14 +1421,18 @@ var HandCursor = (() => {
       this.landmarker = null;
       this.frame = null;
       this.lastVideoTime = -1;
-      this.lastFrameAt = 0;
       this.lastHandAt = 0;
-      this.pinching = false;
-      this.position = null;
-      this.velocity = { x: 0, y: 0 };
+      this.lastLandmarks = null;
       this.applyStyleVariables();
       this.onKeyDown = this.onKeyDown.bind(this);
       this.tick = this.tick.bind(this);
+    }
+    /** Cursor position, or null when no hand is being tracked. */
+    get position() {
+      return this.driver.position;
+    }
+    get pinching() {
+      return this.driver.pinching;
     }
     applyStyleVariables() {
       const { margin, zIndex, grayscale } = this.options;
@@ -1266,7 +1478,7 @@ var HandCursor = (() => {
       try {
         const [stream, landmarker] = await Promise.all([
           openCamera(this.options.camera),
-          this.landmarker ?? createHandLandmarker({
+          this.landmarker ?? loadModel({
             cdn: this.options.cdn,
             numHands: this.options.numHands ?? 1,
             delegate: this.options.delegate
@@ -1282,9 +1494,8 @@ var HandCursor = (() => {
         this.running = true;
         this.starting = false;
         this.lastVideoTime = -1;
-        this.lastFrameAt = 0;
-        this.filter.reset();
-        this.cursor.reset();
+        this.driver.reset();
+        this.driver.prepareHoverStyles();
         this.panel.setState("live");
         if (this.options.hideNativeCursor) {
           document.documentElement.style.setProperty("cursor", "none", "important");
@@ -1310,11 +1521,9 @@ var HandCursor = (() => {
       this.stream = null;
       this.running = false;
       this.starting = false;
-      this.pinching = false;
-      this.position = null;
-      this.touch.cancel();
-      this.cursor.setVisible(false);
-      this.cursor.reset();
+      this.lastLandmarks = null;
+      this.driver.release();
+      this.driver.reset();
       this.panel.detachStream();
       this.panel.setState("idle");
       if (this.options.hideNativeCursor) {
@@ -1333,8 +1542,7 @@ var HandCursor = (() => {
       document.removeEventListener("keydown", this.onKeyDown, true);
       this.landmarker?.close?.();
       this.landmarker = null;
-      this.touch.destroy();
-      this.cursor.destroy();
+      this.driver.destroy();
       this.panel.destroy();
       this.host.remove();
       this.mounted = false;
@@ -1345,76 +1553,49 @@ var HandCursor = (() => {
       this.frame = requestAnimationFrame(this.tick);
       const video = this.panel.video;
       if (video.readyState < 2 || !video.videoWidth) return;
-      let landmarks = null;
       if (video.currentTime !== this.lastVideoTime) {
         this.lastVideoTime = video.currentTime;
         try {
           const result = this.landmarker.detectForVideo(video, now);
-          landmarks = result?.landmarks?.[0] ?? null;
+          this.lastLandmarks = result?.landmarks?.[0] ?? null;
         } catch {
-          landmarks = null;
+          this.lastLandmarks = null;
         }
-        this.lastLandmarks = landmarks;
-      } else {
-        landmarks = this.lastLandmarks ?? null;
       }
-      if (landmarks) {
+      if (this.lastLandmarks) {
         this.lastHandAt = now;
-        this.consumeHand(landmarks, now, video);
+        this.consumeHand(this.lastLandmarks, now, video);
       } else if (now - this.lastHandAt > HAND_TIMEOUT) {
         this.releaseHand();
       }
       this.panel.drawHand(this.lastLandmarks, this.pinching);
     }
     consumeHand(landmarks, now, video) {
-      const aspect = video.videoWidth / video.videoHeight;
-      const dt = this.lastFrameAt ? (now - this.lastFrameAt) / 1e3 : 1 / 60;
-      this.lastFrameAt = now;
-      const point = controlPoint(landmarks);
-      const region = this.options.region;
-      const nx = clamp01((1 - point.x - region.x) / (1 - 2 * region.x));
-      const ny = clamp01((point.y - region.y) / (1 - 2 * region.y));
-      const raw = { x: nx * window.innerWidth, y: ny * window.innerHeight };
-      const smoothed = this.filter.filter(raw.x, raw.y, dt);
-      const previous = this.position;
-      this.position = smoothed;
-      this.velocity = previous ? { x: smoothed.x - previous.x, y: smoothed.y - previous.y } : { x: 0, y: 0 };
-      this.cursor.setVisible(true);
-      this.cursor.update(smoothed.x, smoothed.y, this.velocity.x, this.velocity.y, now);
-      const ratio = pinchRatio(landmarks, aspect);
-      const { on, off } = this.options.pinch;
-      const pinching = this.pinching ? ratio < off : ratio < on;
-      if (pinching && !this.pinching) {
-        this.pinching = true;
-        this.cursor.setPressed(true);
-        this.touch.press(smoothed.x, smoothed.y, now);
-        this.emit("press", { x: smoothed.x, y: smoothed.y });
-      } else if (!pinching && this.pinching) {
-        this.pinching = false;
-        this.cursor.setPressed(false);
-        this.touch.release(smoothed.x, smoothed.y, now);
-        this.emit("release", { x: smoothed.x, y: smoothed.y });
-      }
-      if (this.pinching) {
-        this.touch.drag(smoothed.x, smoothed.y, now);
-      } else {
-        this.touch.move(smoothed.x, smoothed.y);
-      }
-      this.emit("move", { x: smoothed.x, y: smoothed.y, pinching: this.pinching });
+      return this.driver.consume(landmarks, now, video.videoWidth / video.videoHeight);
     }
     releaseHand() {
-      if (this.position) {
-        this.touch.cancel(this.position.x, this.position.y);
-      }
       this.lastLandmarks = null;
-      this.pinching = false;
-      this.position = null;
-      this.lastFrameAt = 0;
-      this.filter.reset();
-      this.cursor.setPressed(false);
-      this.cursor.setVisible(false);
+      this.driver.release();
     }
   };
+  function shadowUi(shadowRoot) {
+    let hovered = null;
+    const setHover = (button) => {
+      if (hovered === button) return;
+      hovered?.classList.remove("hc-hover");
+      button?.classList.add("hc-hover");
+      hovered = button || null;
+    };
+    return {
+      contains: (el) => Boolean(el && shadowRoot.contains(el)),
+      // CSS :hover never fires for a synthetic cursor, so fake it.
+      hover: (el) => setHover(el?.closest?.("button") || null),
+      tap: (el) => {
+        const button = el?.closest?.("button");
+        if (button && !button.disabled) button.click();
+      }
+    };
+  }
 
   // src/index.js
   var VERSION = "1.0.0";

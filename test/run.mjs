@@ -256,6 +256,39 @@ check(
 const clicksAfterDrag = await page.evaluate(() => document.getElementById('out').textContent);
 check('a drag does not also fire a click', clicksAfterDrag === '1', clicksAfterDrag);
 
+const hover = await page.evaluate(() => {
+  // CSS :hover only ever follows the real pointer, so the library mirrors the
+  // page's hover rules onto an attribute it can set itself.
+  window.hc.driver.prepareHoverStyles();
+  const el = document.getElementById('hoverme');
+  const rect = el.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  for (let i = 0; i < 40; i++) window.feed(...window.toCamera(cx, cy), false);
+  const on = {
+    marked: el.hasAttribute('data-hc-hover'),
+    background: getComputedStyle(el).backgroundColor,
+  };
+  for (let i = 0; i < 40; i++) window.feed(...window.toCamera(5, 5), false);
+  return {
+    on,
+    off: {
+      marked: el.hasAttribute('data-hc-hover'),
+      background: getComputedStyle(el).backgroundColor,
+    },
+  };
+});
+check(
+  'CSS :hover styles respond to the hand cursor',
+  hover.on.marked && hover.on.background === 'rgb(0, 202, 72)',
+  JSON.stringify(hover.on),
+);
+check(
+  'hover styles come back off when the cursor leaves',
+  !hover.off.marked && hover.off.background === 'rgb(10, 20, 30)',
+  JSON.stringify(hover.off),
+);
+
 const lost = await page.evaluate(() => {
   window.hc.releaseHand();
   return document.querySelector('[data-hand-cursor]').shadowRoot.querySelector('.hc-cursor')

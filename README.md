@@ -82,8 +82,24 @@ Module builds never auto-mount — call `init()` when you are ready.
 
 Taps dispatch a full `pointerdown` → `mousedown` → `pointerup` → `mouseup` →
 `click` sequence with real coordinates, and move focus, so buttons, links, form
-controls and framework event handlers all behave normally. Hover states work
-too: the cursor emits `pointerover` / `mouseover` / `mousemove` as it travels.
+controls and framework event handlers all behave normally.
+
+### Hover
+
+CSS `:hover` is owned by the browser and only ever follows the real pointer, so
+a synthetic cursor cannot trigger it — which would leave a page whose
+affordances are pure CSS feeling completely dead.
+
+The library works around this: on start it reads the page's own stylesheets and
+mirrors every `x:hover` rule as `x[data-hc-hover]`, then sets that attribute on
+the hovered element and its ancestors. Specificity is unchanged, so your styles
+behave exactly as written. Stylesheets from another origin cannot be read
+without CORS headers and are skipped — you will see a console note naming how
+many. Your own site's CSS is always readable. Turn it off with
+`emulateHover: false`.
+
+JavaScript hover listeners need none of this: `pointerover` / `mouseover` /
+`mousemove` are dispatched as the cursor travels.
 
 ---
 
@@ -100,6 +116,7 @@ HandCursor.init({
   grayscale: true,           // desaturate the preview
   font: true,                // load Inter if the page does not already have it
   hideNativeCursor: false,   // hide the OS pointer while tracking
+  emulateHover: true,        // mirror the page's CSS :hover rules (see above)
   zIndex: 2147483000,
   numHands: 1,
   container: document.body,  // where the overlay is mounted
@@ -143,7 +160,7 @@ Rotation is skipped automatically when the visitor has
 
 Top-level options map to `data-` attributes: `data-position`, `data-margin`,
 `data-minimized`, `data-grayscale`, `data-auto-start`, `data-font`,
-`data-hide-native-cursor`, `data-z-index`, `data-num-hands`, plus
+`data-hide-native-cursor`, `data-emulate-hover`, `data-z-index`, `data-num-hands`, plus
 `data-vision`, `data-wasm` and `data-model` for the MediaPipe assets. Booleans
 are true unless the value is exactly `"false"`.
 
@@ -296,13 +313,25 @@ media track, which turns the camera indicator light off.
 
 ```bash
 npm install
-npm run dev        # build, then serve http://localhost:8080/demo/
+npm run dev        # build, then serve the test page at http://localhost:8080/demo/
 npm run watch      # rebuild on change
 npm test           # browser tests (npx playwright install chromium first)
 ```
 
 `npm run dev` serves over `http://localhost`, which counts as a secure context,
 so the camera works locally.
+
+### The test page
+
+`demo/` is a working bench rather than a showcase. It has buttons at three
+sizes, a twelve-target precision grid, CSS-only hover cards, panels that scroll
+independently of the page, a nested scroller, a horizontal strip, form controls,
+in-page links, thirty numbered bands to fling past, a live event log, and a HUD
+showing cursor position, pinch state, frame rate and what is under the cursor.
+
+The calibration section changes the running instance as you drag, and prints the
+matching `HandCursor.init()` snippet — tune it there, then paste the result into
+your own site.
 
 The tests feed synthetic landmarks straight into the controller, so they cover
 everything downstream of the model — coordinate mapping, smoothing, pinch
@@ -313,10 +342,12 @@ you already have.
 ```
 src/
   index.js        public API, script-tag config, auto-mount
-  controller.js   lifecycle and the per-frame loop
+  controller.js   camera, model and the per-frame loop
   panel.js        the trackpad card and its states
   cursor.js       the arrow: rotation and press scaling
+  driver.js       landmarks in, page interaction out (shared entry point)
   pointer.js      taps, drag-scrolling and momentum
+  hover.js        CSS :hover emulation
   hand-model.js   MediaPipe loading and camera access
   landmarks.js    hand topology, pinch and control-point math
   skeleton.js     canvas overlay and the static illustration

@@ -2,17 +2,17 @@ import { DEFAULTS, mergeOptions } from './config.js';
 import { CSS } from './styles.js';
 import { FONT_URL } from './tokens.js';
 import { Panel } from './panel.js';
-import { Cursor } from './cursor.js';
-import { TouchEmulator } from './pointer.js';
-import { PointFilter } from './one-euro.js';
-import { controlPoint, pinchRatio } from './landmarks.js';
-import { closeCamera, createHandLandmarker, openCamera } from './hand-model.js';
+import { CursorDriver } from './driver.js';
+import { closeCamera, loadModel, openCamera } from './hand-model.js';
 
 /** How long the hand can be missing before the cursor fades out. */
 const HAND_TIMEOUT = 400;
 
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
-
+/**
+ * The single-page build: camera, model, trackpad and cursor all in one
+ * document. The Chrome extension splits these across frames but reuses the same
+ * Panel and CursorDriver.
+ */
 export class HandCursorController {
   constructor(userOptions = {}) {
     this.options = mergeOptions(DEFAULTS, userOptions);
@@ -32,15 +32,11 @@ export class HandCursorController {
     });
     this.panel.mount(this.shadow);
 
-    this.cursor = new Cursor(this.options);
-    this.cursor.mount(this.panel.root);
-
-    this.touch = new TouchEmulator(this.options, {
-      shadowRoot: this.shadow,
-      onTap: (detail) => this.emit('tap', detail),
+    this.driver = new CursorDriver(this.options, {
+      ui: shadowUi(this.shadow),
+      onEvent: (type, detail) => this.emit(type, detail),
     });
-
-    this.filter = new PointFilter(this.options.smoothing);
+    this.driver.mount(this.panel.root);
 
     this.running = false;
     this.starting = false;
@@ -49,15 +45,21 @@ export class HandCursorController {
     this.landmarker = null;
     this.frame = null;
     this.lastVideoTime = -1;
-    this.lastFrameAt = 0;
     this.lastHandAt = 0;
-    this.pinching = false;
-    this.position = null;
-    this.velocity = { x: 0, y: 0 };
+    this.lastLandmarks = null;
 
     this.applyStyleVariables();
     this.onKeyDown = this.onKeyDown.bind(this);
     this.tick = this.tick.bind(this);
+  }
+
+  /** Cursor position, or null when no hand is being tracked. */
+  get position() {
+    return this.driver.position;
+  }
+
+  get pinching() {
+    return this.driver.pinching;
   }
 
   applyStyleVariables() {
@@ -116,7 +118,7 @@ export class HandCursorController {
       const [stream, landmarker] = await Promise.all([
         openCamera(this.options.camera),
         this.landmarker ??
-          createHandLandmarker({
+          loadModel({
             cdn: this.options.cdn,
             numHands: this.options.numHands ?? 1,
             delegate: this.options.delegate,
@@ -135,9 +137,8 @@ export class HandCursorController {
       this.running = true;
       this.starting = false;
       this.lastVideoTime = -1;
-      this.lastFrameAt = 0;
-      this.filter.reset();
-      this.cursor.reset();
+      this.driver.reset();
+      this.driver.prepareHoverStyles();
       this.panel.setState('live');
       if (this.options.hideNativeCursor) {
         document.documentElement.style.setProperty('cursor', 'none', 'important');
@@ -164,12 +165,10 @@ export class HandCursorController {
     this.stream = null;
     this.running = false;
     this.starting = false;
-    this.pinching = false;
-    this.position = null;
+    this.lastLandmarks = null;
 
-    this.touch.cancel();
-    this.cursor.setVisible(false);
-    this.cursor.reset();
+    this.driver.release();
+    this.driver.reset();
     this.panel.detachStream();
     this.panel.setState('idle');
     if (this.options.hideNativeCursor) {
@@ -190,8 +189,7 @@ export class HandCursorController {
     document.removeEventListener('keydown', this.onKeyDown, true);
     this.landmarker?.close?.();
     this.landmarker = null;
-    this.touch.destroy();
-    this.cursor.destroy();
+    this.driver.destroy();
     this.panel.destroy();
     this.host.remove();
     this.mounted = false;
@@ -206,24 +204,20 @@ export class HandCursorController {
     const video = this.panel.video;
     if (video.readyState < 2 || !video.videoWidth) return;
 
-    let landmarks = null;
     if (video.currentTime !== this.lastVideoTime) {
       this.lastVideoTime = video.currentTime;
       try {
         const result = this.landmarker.detectForVideo(video, now);
-        landmarks = result?.landmarks?.[0] ?? null;
+        this.lastLandmarks = result?.landmarks?.[0] ?? null;
       } catch {
         // A dropped frame is not worth tearing the session down for.
-        landmarks = null;
+        this.lastLandmarks = null;
       }
-      this.lastLandmarks = landmarks;
-    } else {
-      landmarks = this.lastLandmarks ?? null;
     }
 
-    if (landmarks) {
+    if (this.lastLandmarks) {
       this.lastHandAt = now;
-      this.consumeHand(landmarks, now, video);
+      this.consumeHand(this.lastLandmarks, now, video);
     } else if (now - this.lastHandAt > HAND_TIMEOUT) {
       this.releaseHand();
     }
@@ -232,64 +226,32 @@ export class HandCursorController {
   }
 
   consumeHand(landmarks, now, video) {
-    const aspect = video.videoWidth / video.videoHeight;
-    const dt = this.lastFrameAt ? (now - this.lastFrameAt) / 1000 : 1 / 60;
-    this.lastFrameAt = now;
-
-    const point = controlPoint(landmarks);
-    const region = this.options.region;
-    // Mirror, then stretch the usable slice of the frame across the viewport.
-    const nx = clamp01(((1 - point.x) - region.x) / (1 - 2 * region.x));
-    const ny = clamp01((point.y - region.y) / (1 - 2 * region.y));
-
-    const raw = { x: nx * window.innerWidth, y: ny * window.innerHeight };
-    const smoothed = this.filter.filter(raw.x, raw.y, dt);
-
-    const previous = this.position;
-    this.position = smoothed;
-    this.velocity = previous
-      ? { x: smoothed.x - previous.x, y: smoothed.y - previous.y }
-      : { x: 0, y: 0 };
-
-    this.cursor.setVisible(true);
-    this.cursor.update(smoothed.x, smoothed.y, this.velocity.x, this.velocity.y, now);
-
-    // Pinch, with hysteresis so a hand hovering near the threshold stays put.
-    const ratio = pinchRatio(landmarks, aspect);
-    const { on, off } = this.options.pinch;
-    const pinching = this.pinching ? ratio < off : ratio < on;
-
-    if (pinching && !this.pinching) {
-      this.pinching = true;
-      this.cursor.setPressed(true);
-      this.touch.press(smoothed.x, smoothed.y, now);
-      this.emit('press', { x: smoothed.x, y: smoothed.y });
-    } else if (!pinching && this.pinching) {
-      this.pinching = false;
-      this.cursor.setPressed(false);
-      this.touch.release(smoothed.x, smoothed.y, now);
-      this.emit('release', { x: smoothed.x, y: smoothed.y });
-    }
-
-    if (this.pinching) {
-      this.touch.drag(smoothed.x, smoothed.y, now);
-    } else {
-      this.touch.move(smoothed.x, smoothed.y);
-    }
-
-    this.emit('move', { x: smoothed.x, y: smoothed.y, pinching: this.pinching });
+    return this.driver.consume(landmarks, now, video.videoWidth / video.videoHeight);
   }
 
   releaseHand() {
-    if (this.position) {
-      this.touch.cancel(this.position.x, this.position.y);
-    }
     this.lastLandmarks = null;
-    this.pinching = false;
-    this.position = null;
-    this.lastFrameAt = 0;
-    this.filter.reset();
-    this.cursor.setPressed(false);
-    this.cursor.setVisible(false);
+    this.driver.release();
   }
+}
+
+/** Treats everything inside the trackpad's shadow root as our own chrome. */
+function shadowUi(shadowRoot) {
+  let hovered = null;
+  const setHover = (button) => {
+    if (hovered === button) return;
+    hovered?.classList.remove('hc-hover');
+    button?.classList.add('hc-hover');
+    hovered = button || null;
+  };
+
+  return {
+    contains: (el) => Boolean(el && shadowRoot.contains(el)),
+    // CSS :hover never fires for a synthetic cursor, so fake it.
+    hover: (el) => setHover(el?.closest?.('button') || null),
+    tap: (el) => {
+      const button = el?.closest?.('button');
+      if (button && !button.disabled) button.click();
+    },
+  };
 }

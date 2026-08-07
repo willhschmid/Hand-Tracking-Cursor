@@ -52,8 +52,8 @@ export class Panel {
     this.cornerLeft.title = options.strings.disable;
     this.cornerLeft.setAttribute('aria-label', options.strings.disable);
 
-    this.cta.addEventListener('click', () => handlers.onToggleCamera());
-    this.miniCta.addEventListener('click', () => handlers.onToggleCamera());
+    this.cta.addEventListener('click', (event) => handlers.onToggleCamera(event));
+    this.miniCta.addEventListener('click', (event) => handlers.onToggleCamera(event));
     this.cornerLeft.addEventListener('click', () => handlers.onStop());
     this.cornerRight.addEventListener('click', () => handlers.onToggleSize());
 

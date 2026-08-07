@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hand Tracking Cursor — Demo</title>
+    <title>Hand Tracking Cursor — Test Page</title>
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap"
@@ -11,93 +11,271 @@
     <link rel="stylesheet" href="./demo.css" />
   </head>
   <body>
+    <!-- Live telemetry, so you can see what the tracker thinks is happening. -->
+    <aside class="hud" id="hud">
+      <div class="hud__row"><span>State</span><b id="hud-state">idle</b></div>
+      <div class="hud__row"><span>Cursor</span><b id="hud-pos">—</b></div>
+      <div class="hud__row"><span>Pinch</span><b id="hud-pinch">open</b></div>
+      <div class="hud__row"><span>Rate</span><b id="hud-fps">— fps</b></div>
+      <div class="hud__row"><span>Over</span><b id="hud-target">—</b></div>
+      <div class="hud__row"><span>Page scroll</span><b id="hud-scroll">0%</b></div>
+    </aside>
+
     <header class="hero">
-      <p class="eyebrow">Hand Tracking Cursor</p>
-      <h1>Control this page<br />without touching anything.</h1>
+      <p class="eyebrow">Hand Tracking Cursor · Test Page</p>
+      <h1>Everything here is<br />something to try.</h1>
       <p class="lede">
-        Turn on the camera in the trackpad at the bottom left. Move your hand to move the
-        cursor. Touch your index finger to your thumb to click, and hold the pinch while
-        moving up or down to scroll.
+        Hit <b>Enable Camera</b> in the trackpad at the bottom left, then hold your hand up,
+        palm to the camera, about arm's length away. Move to steer. Touch your index finger
+        to your thumb to click. Hold that pinch and drag to scroll.
       </p>
       <div class="row">
-        <button class="btn btn--primary" data-count>Tapped 0 times</button>
-        <a class="btn btn--ghost" href="#gestures">Jump to gestures</a>
+        <a class="btn btn--primary" href="#buttons">Start testing</a>
+        <a class="btn btn--ghost" href="#calibrate">Calibration</a>
       </div>
+      <p class="hint">
+        Press <kbd>Esc</kbd> at any time to turn the camera off. Nothing is uploaded —
+        everything runs in this tab.
+      </p>
     </header>
 
     <main>
-      <section class="section" id="gestures">
-        <h2>Gestures</h2>
-        <div class="grid">
-          <article class="card">
-            <h3>Move</h3>
-            <p>
-              An open hand moves the arrow. The cursor leans into the direction it is
-              travelling, then straightens back up when you hold still.
-            </p>
-          </article>
-          <article class="card">
-            <h3>Tap</h3>
-            <p>
-              Bring your index finger to your thumb. The skeleton turns green, the arrow
-              scales down, and the element underneath receives a real click.
-            </p>
-          </article>
-          <article class="card">
-            <h3>Scroll</h3>
-            <p>
-              Hold the pinch and drag up or down. Whatever is under the cursor scrolls —
-              the page, or a single panel — and it keeps gliding when you let go.
-            </p>
-          </article>
+      <!-- 1 ------------------------------------------------------------ -->
+      <section class="section" id="buttons">
+        <p class="kicker">01</p>
+        <h2>Buttons at three sizes</h2>
+        <p class="note">
+          Tap each one. Bigger targets should be effortless; the small row is where you will
+          feel whether smoothing is tuned right for you.
+        </p>
+        <div class="stack">
+          <div class="row row--baseline">
+            <button class="btn btn--primary btn--lg" data-counter>Large</button>
+            <button class="btn btn--primary btn--lg" data-counter>Large</button>
+            <span class="tally" data-tally-for="lg">0 taps</span>
+          </div>
+          <div class="row row--baseline">
+            <button class="btn btn--ghost" data-counter>Medium</button>
+            <button class="btn btn--ghost" data-counter>Medium</button>
+            <button class="btn btn--ghost" data-counter>Medium</button>
+            <span class="tally" data-tally-for="md">0 taps</span>
+          </div>
+          <div class="row row--baseline">
+            <button class="btn btn--ghost btn--sm" data-counter>Small</button>
+            <button class="btn btn--ghost btn--sm" data-counter>Small</button>
+            <button class="btn btn--ghost btn--sm" data-counter>Small</button>
+            <button class="btn btn--ghost btn--sm" data-counter>Small</button>
+            <span class="tally" data-tally-for="sm">0 taps</span>
+          </div>
         </div>
       </section>
 
-      <section class="section">
-        <h2>Scroll inside an element</h2>
+      <!-- 2 ------------------------------------------------------------ -->
+      <section class="section" id="targets">
+        <p class="kicker">02</p>
+        <h2>Precision test</h2>
         <p class="note">
-          Pinch over this list and drag. The list scrolls on its own; the page stays put.
+          Tap all twelve. If you keep missing low or to one side, the mapping region needs
+          adjusting — there are sliders for that further down.
         </p>
-        <div class="scroller" id="list"></div>
+        <div class="targets" id="targets-grid"></div>
+        <div class="row">
+          <span class="tally"><b id="targets-score">0</b> / 12 hit</span>
+          <button class="btn btn--ghost btn--sm" id="targets-reset">Reset</button>
+        </div>
       </section>
 
-      <section class="section">
-        <h2>Ordinary controls</h2>
-        <p class="note">Everything here responds to a pinch exactly as it does to a click.</p>
+      <!-- 3 ------------------------------------------------------------ -->
+      <section class="section" id="hover">
+        <p class="kicker">03</p>
+        <h2>Hover</h2>
+        <p class="note">
+          These react to <code>:hover</code> only. If they light up as the cursor passes,
+          real pointer events are reaching the page.
+        </p>
+        <div class="grid">
+          <article class="card card--hover"><h3>Card one</h3><p>Move over me.</p></article>
+          <article class="card card--hover"><h3>Card two</h3><p>And me.</p></article>
+          <article class="card card--hover"><h3>Card three</h3><p>Me too.</p></article>
+        </div>
+      </section>
+
+      <!-- 4 ------------------------------------------------------------ -->
+      <section class="section" id="scroll-element">
+        <p class="kicker">04</p>
+        <h2>Scrolling inside an element</h2>
+        <p class="note">
+          Pinch over a panel and drag up or down. Only that panel should move — the page
+          behind it stays exactly where it is.
+        </p>
+        <div class="split">
+          <div class="scroller" id="list-a"></div>
+          <div class="scroller" id="list-b"></div>
+        </div>
+      </section>
+
+      <!-- 5 ------------------------------------------------------------ -->
+      <section class="section" id="scroll-nested">
+        <p class="kicker">05</p>
+        <h2>Nested and sideways</h2>
+        <p class="note">
+          The inner panel scrolls on its own; drag outside it and the outer one moves
+          instead. The strip below scrolls horizontally — drag it left and right.
+        </p>
+        <div class="scroller scroller--outer" id="nested-outer">
+          <p class="filler">Outer panel. Drag here and this box scrolls.</p>
+          <div class="scroller scroller--inner" id="nested-inner"></div>
+          <p class="filler">Still the outer panel, below the inner one.</p>
+          <p class="filler">Keep dragging to reach the bottom of the outer panel.</p>
+        </div>
+        <div class="railway" id="railway"></div>
+      </section>
+
+      <!-- 6 ------------------------------------------------------------ -->
+      <section class="section" id="controls">
+        <p class="kicker">06</p>
+        <h2>Form controls</h2>
+        <p class="note">
+          Taps move focus as well as click, so the text field should take the caret and the
+          slider should respond.
+        </p>
         <div class="controls">
           <label class="control">
-            <span>Grayscale preview</span>
-            <input type="checkbox" class="toggle" checked data-option="grayscale" />
+            <span>Text field</span>
+            <input type="text" class="field" placeholder="Tap to focus" />
           </label>
+          <label class="control">
+            <span>Checkbox</span>
+            <input type="checkbox" class="toggle" />
+          </label>
+          <label class="control">
+            <span>Select</span>
+            <select class="field">
+              <option>First option</option>
+              <option>Second option</option>
+              <option>Third option</option>
+            </select>
+          </label>
+          <label class="control">
+            <span>Range</span>
+            <input type="range" class="range" min="0" max="100" value="40" />
+          </label>
+          <fieldset class="control control--radios">
+            <span>Radio group</span>
+            <div class="row">
+              <label class="radio"><input type="radio" name="r" checked /> One</label>
+              <label class="radio"><input type="radio" name="r" /> Two</label>
+              <label class="radio"><input type="radio" name="r" /> Three</label>
+            </div>
+          </fieldset>
+        </div>
+      </section>
+
+      <!-- 7 ------------------------------------------------------------ -->
+      <section class="section" id="links">
+        <p class="kicker">07</p>
+        <h2>Links</h2>
+        <p class="note">These jump around this page, so tapping one is safe.</p>
+        <div class="row">
+          <a class="btn btn--ghost" href="#buttons">Back to 01</a>
+          <a class="btn btn--ghost" href="#targets">Back to 02</a>
+          <a class="btn btn--ghost" href="#bottom">To the bottom</a>
+        </div>
+        <p class="note" style="margin-top: 12px">
+          Inline link inside a paragraph:
+          <a href="#calibrate">jump to calibration</a> — smaller targets are the real test.
+        </p>
+      </section>
+
+      <!-- 8 ------------------------------------------------------------ -->
+      <section class="section" id="calibrate">
+        <p class="kicker">08</p>
+        <h2>Calibration</h2>
+        <p class="note">
+          These change the live instance immediately. Find settings that feel right, then
+          pass them to <code>HandCursor.init()</code> on your own site.
+        </p>
+
+        <div class="sliders">
+          <label class="slider">
+            <span><span>Mapping region</span><b id="v-region">0.15</b></span>
+            <input type="range" id="s-region" min="0" max="0.35" step="0.01" value="0.15" />
+            <em>Higher means smaller hand movements cover the screen.</em>
+          </label>
+          <label class="slider">
+            <span><span>Smoothing cutoff</span><b id="v-cutoff">1.4</b></span>
+            <input type="range" id="s-cutoff" min="0.3" max="6" step="0.1" value="1.4" />
+            <em>Higher is snappier, lower is calmer.</em>
+          </label>
+          <label class="slider">
+            <span><span>Pinch threshold</span><b id="v-pinch">0.42</b></span>
+            <input type="range" id="s-pinch" min="0.2" max="0.7" step="0.01" value="0.42" />
+            <em>Higher clicks sooner, at the cost of false positives.</em>
+          </label>
+          <label class="slider">
+            <span><span>Cursor size</span><b id="v-size">18px</b></span>
+            <input type="range" id="s-size" min="12" max="40" step="1" value="18" />
+            <em>Purely cosmetic.</em>
+          </label>
+        </div>
+
+        <div class="controls">
           <label class="control">
             <span>Cursor rotation</span>
             <input type="checkbox" class="toggle" checked data-option="rotation" />
           </label>
           <label class="control">
-            <span>Minimized trackpad</span>
+            <span>Grayscale preview</span>
+            <input type="checkbox" class="toggle" checked data-option="grayscale" />
+          </label>
+          <label class="control">
+            <span>Minimize the trackpad</span>
             <input type="checkbox" class="toggle" data-option="minimized" />
           </label>
+          <label class="control">
+            <span>Hide the mouse pointer</span>
+            <input type="checkbox" class="toggle" data-option="hideNativeCursor" />
+          </label>
         </div>
+
         <div class="row">
-          <button class="btn btn--ghost" data-reposition="bottom-left">Bottom left</button>
-          <button class="btn btn--ghost" data-reposition="bottom-right">Bottom right</button>
-          <button class="btn btn--ghost" data-reposition="top-right">Top right</button>
+          <button class="btn btn--ghost btn--sm" data-reposition="bottom-left">
+            Bottom left
+          </button>
+          <button class="btn btn--ghost btn--sm" data-reposition="bottom-right">
+            Bottom right
+          </button>
+          <button class="btn btn--ghost btn--sm" data-reposition="top-left">Top left</button>
+          <button class="btn btn--ghost btn--sm" data-reposition="top-right">
+            Top right
+          </button>
         </div>
+
+        <pre class="snippet" id="snippet"></pre>
       </section>
 
-      <section class="section">
+      <!-- 9 ------------------------------------------------------------ -->
+      <section class="section" id="log-section">
+        <p class="kicker">09</p>
         <h2>Event log</h2>
-        <p class="note">Every gesture the cursor emits, newest first.</p>
+        <p class="note">Everything the cursor emits, newest first.</p>
         <ul class="log" id="log"></ul>
       </section>
 
-      <section class="section tall">
-        <h2>Room to scroll</h2>
-        <p class="note">Filler, so there is somewhere to fling to.</p>
+      <!-- 10 ----------------------------------------------------------- -->
+      <section class="section" id="runway">
+        <p class="kicker">10</p>
+        <h2>Page scrolling</h2>
+        <p class="note">
+          Pinch anywhere that is not a panel and drag up. Let go mid-drag and the page keeps
+          gliding. The bands are numbered so you can see how far one fling carries you.
+        </p>
+        <div class="bands" id="bands"></div>
       </section>
     </main>
 
-    <footer class="footer">
+    <footer class="footer" id="bottom">
+      <p><b>You made it to the bottom.</b></p>
       <p>Video is processed on-device and never leaves the browser.</p>
     </footer>
 

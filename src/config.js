@@ -14,6 +14,8 @@ export const DEFAULTS = {
   font: true,
   /** Hide the OS cursor while a hand is being tracked. */
   hideNativeCursor: false,
+  /** Mirror the page's CSS :hover rules so they respond to the hand cursor. */
+  emulateHover: true,
   /** Stacking order of the overlay root. */
   zIndex: 2147483000,
   /** Hands to track. Only the first one drives the cursor. */
@@ -79,6 +81,7 @@ export const DEFAULTS = {
     insecure: 'Camera access needs a secure (https) connection.',
     denied: 'Camera permission was denied. Allow access and try again.',
     missing: 'No camera was found on this device.',
+    model: 'The hand tracking model could not load. Check your connection.',
     failed: 'Hand tracking could not start. Please try again.',
   },
 };

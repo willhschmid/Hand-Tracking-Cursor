@@ -9,6 +9,9 @@
       #btn { padding: 20px 30px; font-size: 20px; }
       #box { margin-top: 40px; width: 400px; height: 200px; overflow-y: auto; border: 2px solid #333; }
       #box div { padding: 20px; }
+      /* No transition, so the mirrored rule can be read back synchronously. */
+      #hoverme { margin-top: 20px; width: 300px; padding: 20px; background: rgb(10, 20, 30); }
+      #hoverme:hover { background: rgb(0, 202, 72); }
     </style>
   </head>
   <body>
@@ -16,6 +19,7 @@
       <button id="btn">click me</button>
       <span id="out">0</span>
       <div id="box"></div>
+      <div id="hoverme">hover target</div>
     </div>
 
     <script src="../dist/hand-cursor.js" data-manual></script>

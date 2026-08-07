@@ -77,19 +77,29 @@ function fireMouse(el, type, x, y, extra) {
   el.dispatchEvent(new MouseEvent(type, eventInit(x, y, extra)));
 }
 
+/**
+ * The trackpad's own chrome, which must never receive synthesized page events.
+ * Two implementations exist: the script-tag build points it at its shadow root,
+ * and the extension points it at the iframe the card lives in.
+ *
+ * @typedef {object} OwnUi
+ * @property {(el: Element|null) => boolean} contains  is this element ours?
+ * @property {(el: Element|null, x: number, y: number) => void} hover
+ * @property {(el: Element|null, x: number, y: number) => void} tap
+ */
+
 export class TouchEmulator {
   /**
    * @param {object} options    resolved config
    * @param {object} hooks
-   * @param {ShadowRoot} hooks.shadowRoot  the trackpad's own root, so taps on
-   *                                       its buttons are handled directly
-   *                                       instead of being synthesized
+   * @param {OwnUi} [hooks.ui]  the trackpad's own chrome
    * @param {Function} [hooks.onTap]
    */
-  constructor(options, { shadowRoot, onTap } = {}) {
+  constructor(options, { ui, onTap, hover } = {}) {
     this.options = options;
-    this.shadowRoot = shadowRoot;
+    this.ui = ui;
     this.onTap = onTap;
+    this.hoverStyles = hover;
 
     this.hovered = null;
     this.pressing = false;
@@ -99,26 +109,25 @@ export class TouchEmulator {
     this.velocity = { x: 0, y: 0 };
     this.scrollTarget = null;
     this.momentumFrame = null;
-    this.internalHover = null;
   }
 
   /**
    * What is under the cursor, and whether that is the trackpad itself.
    *
-   * `deepElementFromPoint` walks into our own shadow root too, so the check for
-   * "internal" is simply whether the result lives inside it. Asking the shadow
-   * root directly would not work: `ShadowRoot.elementFromPoint` retargets, and
-   * happily hands back elements from the host page.
+   * `deepElementFromPoint` walks into open shadow roots, including our own, so
+   * the ownership question is just "does the UI claim this element". Asking a
+   * shadow root directly would not work: `ShadowRoot.elementFromPoint`
+   * retargets, and happily hands back elements from the host page.
    */
   resolve(x, y) {
     const el = deepElementFromPoint(x, y);
-    return { el, internal: Boolean(el && this.shadowRoot?.contains(el)) };
+    return { el, internal: Boolean(this.ui?.contains(el)) };
   }
 
   /** Keeps hover styles and pointer-position listeners on the page in sync. */
   move(x, y) {
     const { el, internal } = this.resolve(x, y);
-    this.setInternalHover(internal ? el.closest?.('button') : null);
+    this.ui?.hover(internal ? el : null, x, y);
 
     if (internal || !el) {
       this.leaveHovered(x, y);
@@ -128,6 +137,7 @@ export class TouchEmulator {
     if (el !== this.hovered) {
       this.leaveHovered(x, y);
       this.hovered = el;
+      this.hoverStyles?.set(el);
       firePointer(el, 'pointerover', x, y, { buttons: this.pressing ? 1 : 0 });
       fireMouse(el, 'mouseover', x, y, { buttons: this.pressing ? 1 : 0 });
       el.dispatchEvent(
@@ -139,18 +149,11 @@ export class TouchEmulator {
     fireMouse(el, 'mousemove', x, y, { buttons: this.pressing ? 1 : 0 });
   }
 
-  /** CSS :hover never fires for a synthetic cursor, so fake it on our own buttons. */
-  setInternalHover(button) {
-    if (this.internalHover === button) return;
-    this.internalHover?.classList.remove('hc-hover');
-    button?.classList.add('hc-hover');
-    this.internalHover = button || null;
-  }
-
   leaveHovered(x, y) {
     const previous = this.hovered;
     if (!previous) return;
     this.hovered = null;
+    this.hoverStyles?.clear();
     firePointer(previous, 'pointerout', x, y, { buttons: 0 });
     fireMouse(previous, 'mouseout', x, y, { buttons: 0 });
     previous.dispatchEvent(
@@ -218,9 +221,7 @@ export class TouchEmulator {
     if (!el) return;
 
     if (internal) {
-      // Our own controls: let the DOM do the work.
-      const target = el.closest?.('button');
-      if (target && !target.disabled) target.click();
+      this.ui.tap(el, x, y);
       this.onTap?.({ x, y, target: el, internal: true });
       return;
     }
@@ -281,7 +282,7 @@ export class TouchEmulator {
     this.dragging = false;
     this.origin = null;
     this.scrollTarget = null;
-    this.setInternalHover(null);
+    this.ui?.hover(null, x, y);
     this.leaveHovered(x, y);
   }
 
