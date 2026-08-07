@@ -1,5 +1,7 @@
 import { ICONS } from './icons.js';
-import { drawSkeleton, handIllustration } from './skeleton.js';
+import { SIZE } from './tokens.js';
+import { drawSkeleton } from './skeleton.js';
+import { HAND_GRAPHIC } from './hand-graphic.js';
 
 /**
  * The trackpad card: the pre-enabled prompt, the live camera preview and the
@@ -23,7 +25,7 @@ export class Panel {
         <div class="hc-stage">
           <video class="hc-video" playsinline muted autoplay></video>
           <canvas class="hc-overlay" aria-hidden="true"></canvas>
-          <div class="hc-illo">${handIllustration()}</div>
+          <div class="hc-illo"><img class="hc-illo-img" src="${HAND_GRAPHIC}" alt="" width="${SIZE.illoWidth}" height="${SIZE.illoHeight}" draggable="false" /></div>
         </div>
         <p class="hc-copy"></p>
         <button class="hc-cta" type="button"></button>

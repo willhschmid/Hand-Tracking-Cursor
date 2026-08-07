@@ -16,6 +16,8 @@
       <div class="hud__row"><span>State</span><b id="hud-state">idle</b></div>
       <div class="hud__row"><span>Cursor</span><b id="hud-pos">—</b></div>
       <div class="hud__row"><span>Pinch</span><b id="hud-pinch">open</b></div>
+      <div class="hud__row"><span>Pinch ratio</span><b id="hud-ratio">—</b></div>
+      <div class="hud__row"><span>Closest seen</span><b id="hud-ratio-min">—</b></div>
       <div class="hud__row"><span>Rate</span><b id="hud-fps">— fps</b></div>
       <div class="hud__row"><span>Over</span><b id="hud-target">—</b></div>
       <div class="hud__row"><span>Page scroll</span><b id="hud-scroll">0%</b></div>
@@ -208,9 +210,12 @@
             <em>Higher is snappier, lower is calmer.</em>
           </label>
           <label class="slider">
-            <span><span>Pinch threshold</span><b id="v-pinch">0.42</b></span>
-            <input type="range" id="s-pinch" min="0.2" max="0.7" step="0.01" value="0.42" />
-            <em>Higher clicks sooner, at the cost of false positives.</em>
+            <span><span>Pinch threshold</span><b id="v-pinch">0.22</b></span>
+            <input type="range" id="s-pinch" min="0.1" max="0.6" step="0.01" value="0.22" />
+            <em>
+              Hold your fingers where you want a click to land, read
+              <b>Closest seen</b> in the HUD, and set this a little above it.
+            </em>
           </label>
           <label class="slider">
             <span><span>Scroll threshold</span><b id="v-drag">34px</b></span>
@@ -218,8 +223,8 @@
             <em>How far a pinch must travel before it scrolls instead of clicking.</em>
           </label>
           <label class="slider">
-            <span><span>Cursor sway</span><b id="v-sway">15&deg;</b></span>
-            <input type="range" id="s-sway" min="0" max="45" step="1" value="15" />
+            <span><span>Cursor sway</span><b id="v-sway">22&deg;</b></span>
+            <input type="range" id="s-sway" min="0" max="45" step="1" value="22" />
             <em>Maximum lean into the direction of travel.</em>
           </label>
           <label class="slider">

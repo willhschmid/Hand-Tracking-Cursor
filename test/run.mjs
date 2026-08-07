@@ -109,6 +109,22 @@ check(
   mini.width === 106 && mini.height === 106,
   `${mini.width}x${mini.height}`,
 );
+const illustration = await page.evaluate(() => {
+  const img = document
+    .querySelector('[data-hand-cursor]')
+    .shadowRoot.querySelector('.hc-illo-img');
+  return {
+    inlined: img.src.startsWith('data:image/png;base64,'),
+    natural: [img.naturalWidth, img.naturalHeight],
+    complete: img.complete,
+  };
+});
+check(
+  'the pre-enabled card shows the supplied artwork, inlined',
+  illustration.inlined && illustration.complete && illustration.natural[0] === 198,
+  JSON.stringify(illustration),
+);
+
 check(
   'minimized camera button is 32x32, inset 4px',
   miniCta.width === 32 &&
@@ -173,9 +189,10 @@ check(
   rotation.right > 4 && rotation.left < -4,
   JSON.stringify(rotation),
 );
+const maxAngle = await page.evaluate(() => window.hc.options.rotation.maxAngle);
 check(
-  'the lean is capped at 15 degrees',
-  Math.abs(rotation.right) <= 15.5 && Math.abs(rotation.left) <= 15.5,
+  `the lean is capped at the configured ${maxAngle} degrees`,
+  Math.abs(rotation.right) <= maxAngle + 0.5 && Math.abs(rotation.left) <= maxAngle + 0.5,
   JSON.stringify(rotation),
 );
 check(
@@ -387,6 +404,34 @@ check(
   `${live.width}x${live.height}`,
 );
 check('the camera-off control appears when live', cornerLeft.display !== 'none', cornerLeft.display);
+
+const miniLive = await page.evaluate(async () => {
+  window.hc.setMinimized(true);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const sr = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const read = () => ({
+    greenButton: getComputedStyle(sr.querySelector('.hc-mini-cta')).display,
+    cameraOff: getComputedStyle(sr.querySelector('.hc-corner--tl')).display,
+    expand: getComputedStyle(sr.querySelector('.hc-corner--tr')).display,
+  });
+  const live = read();
+  window.hc.panel.setState('idle');
+  const idle = read();
+  window.hc.panel.setState('live');
+  return { live, idle };
+});
+check(
+  'minimized while live shows only the camera-off icon, no green button',
+  miniLive.live.greenButton === 'none' &&
+    miniLive.live.cameraOff !== 'none' &&
+    miniLive.live.expand !== 'none',
+  JSON.stringify(miniLive.live),
+);
+check(
+  'minimized before enabling still shows the green button',
+  miniLive.idle.greenButton !== 'none' && miniLive.idle.cameraOff === 'none',
+  JSON.stringify(miniLive.idle),
+);
 check('the preview is desaturated', video.filter.includes('grayscale'), video.filter);
 
 const overlay = await page.evaluate(() => {

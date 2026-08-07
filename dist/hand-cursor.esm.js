@@ -35,8 +35,15 @@ var DEFAULTS = {
   /**
    * Pinch distance (thumb tip to index tip) as a fraction of hand size, with
    * hysteresis so a hovering hand does not chatter between states.
+   *
+   * Fractions, not millimetres, so the gesture works at any distance from the
+   * camera. For scale: the landmarks sit at the centre of each fingertip, so
+   * even with the pads pressed together the ratio bottoms out near 0.15 rather
+   * than 0 — there is not much room below this before pinching stops
+   * registering at all. `handcursor:move` reports the live ratio if you want to
+   * measure your own hand and pick a number.
    */
-  pinch: { on: 0.42, off: 0.55 },
+  pinch: { on: 0.22, off: 0.32 },
   /**
    * A press shorter and tighter than this counts as a tap. Both numbers are
    * generous compared to a touchscreen: a pinch held in mid-air always drifts a
@@ -63,8 +70,8 @@ var DEFAULTS = {
    */
   rotation: {
     enabled: true,
-    maxAngle: 15,
-    gain: 1.2,
+    maxAngle: 22,
+    gain: 1.8,
     minSpeed: 0.6,
     smoothing: 0.12
   },
@@ -267,7 +274,14 @@ var CSS = `
 .hc-root[data-state="live"] .hc-illo { display: none; }
 .hc-root[data-mini="true"] .hc-illo { padding: 10px; }
 
-.hc-illo-svg { width: 100%; height: 100%; overflow: visible; }
+.hc-illo-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
 
 /* ----------------------------------------------------------------- copy -- */
 
@@ -375,15 +389,10 @@ var CSS = `
 
 .hc-root[data-mini="true"] .hc-mini-cta { display: inline-flex; }
 
-.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta {
-  background: ${COLOR.white};
-  color: ${COLOR.iconDark};
-}
-
-.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta:hover,
-.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta.hc-hover {
-  background: ${COLOR.border};
-}
+/* Once the camera is on, the only control in the minimized card is the
+   camera-off icon in the top left. The green button is the pre-enabled
+   affordance and has nothing left to offer here. */
+.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta { display: none; }
 
 .hc-root[data-mini="true"][data-state="loading"] .hc-mini-cta { opacity: 0.7; }
 
@@ -504,51 +513,6 @@ var CONNECTIONS = [
   [9, 13],
   [13, 17]
 ];
-var PALM = [0, 5, 9, 13, 17];
-var CANONICAL_HAND = [
-  [0.5, 0.95],
-  // 0  wrist
-  [0.67, 0.87],
-  // 1  thumb cmc
-  [0.79, 0.75],
-  // 2  thumb mcp
-  [0.86, 0.64],
-  // 3  thumb ip
-  [0.91, 0.54],
-  // 4  thumb tip
-  [0.58, 0.53],
-  // 5  index mcp
-  [0.61, 0.37],
-  // 6  index pip
-  [0.62, 0.27],
-  // 7  index dip
-  [0.63, 0.17],
-  // 8  index tip
-  [0.47, 0.51],
-  // 9  middle mcp
-  [0.47, 0.33],
-  // 10
-  [0.47, 0.22],
-  // 11
-  [0.47, 0.12],
-  // 12 middle tip
-  [0.36, 0.53],
-  // 13 ring mcp
-  [0.33, 0.36],
-  // 14
-  [0.32, 0.25],
-  // 15
-  [0.31, 0.16],
-  // 16 ring tip
-  [0.26, 0.58],
-  // 17 pinky mcp
-  [0.21, 0.45],
-  // 18
-  [0.19, 0.36],
-  // 19
-  [0.17, 0.28]
-  // 20 pinky tip
-].map(([x, y]) => ({ x, y }));
 function distance(a, b, aspect) {
   const dx = (a.x - b.x) * aspect;
   const dy = a.y - b.y;
@@ -598,26 +562,9 @@ function drawSkeleton(ctx, points, { pinching = false } = {}) {
     ctx.fillRect(p.x - half, p.y - half, JOINT, JOINT);
   }
 }
-function handIllustration() {
-  const S = 100;
-  const STRETCH = 1.26;
-  const pt = (i) => CANONICAL_HAND[i];
-  const px = (i) => pt(i).x * S;
-  const py = (i) => pt(i).y * S * STRETCH;
-  const at = (i) => `${px(i).toFixed(2)} ${py(i).toFixed(2)}`;
-  const bones = CONNECTIONS.map(([a, b]) => `M${at(a)}L${at(b)}`).join("");
-  const palm = `M${PALM.map(at).join("L")}Z`;
-  const tips = [4, 8, 12, 16, 20].map((i) => `<circle cx="${px(i).toFixed(2)}" cy="${py(i).toFixed(2)}" r="6"/>`).join("");
-  const joints = CANONICAL_HAND.map(
-    (_, i) => `<rect x="${(px(i) - 1.6).toFixed(2)}" y="${(py(i) - 1.6).toFixed(2)}" width="3.2" height="3.2"/>`
-  ).join("");
-  const skin = "#E4E4E4";
-  return (
-    // Cropped to the hand itself rather than the 0..1 landmark box, so the
-    // artwork fills the 66x98 frame instead of floating in it.
-    `<svg class="hc-illo-svg" viewBox="9 7 82 122" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><g fill="${skin}"><path d="${palm}"/>${tips}<path d="${bones}" fill="none" stroke="${skin}" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/></g><path d="${bones}" fill="none" stroke="${COLOR.purple}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M${at(INDEX_TIP)}L${at(THUMB_TIP)}" fill="none" stroke="${COLOR.green}" stroke-width="1.4" stroke-dasharray="3 3" stroke-linecap="round"/><g fill="${COLOR.purple}">${joints}</g></svg>`
-  );
-}
+
+// src/hand-graphic.js
+var HAND_GRAPHIC = "data:image/png;base64,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";
 
 // src/panel.js
 var Panel = class {
@@ -636,7 +583,7 @@ var Panel = class {
         <div class="hc-stage">
           <video class="hc-video" playsinline muted autoplay></video>
           <canvas class="hc-overlay" aria-hidden="true"></canvas>
-          <div class="hc-illo">${handIllustration()}</div>
+          <div class="hc-illo"><img class="hc-illo-img" src="${HAND_GRAPHIC}" alt="" width="${SIZE.illoWidth}" height="${SIZE.illoHeight}" draggable="false" /></div>
         </div>
         <p class="hc-copy"></p>
         <button class="hc-cta" type="button"></button>
@@ -1273,8 +1220,9 @@ var CursorDriver = class {
     } else {
       this.touch.move(smoothed.x, smoothed.y);
     }
-    this.emit("move", { x: smoothed.x, y: smoothed.y, pinching: this.pinching });
-    return { x: smoothed.x, y: smoothed.y, pinching: this.pinching };
+    const detail = { x: smoothed.x, y: smoothed.y, pinching: this.pinching, ratio };
+    this.emit("move", detail);
+    return detail;
   }
   /** The hand left the frame, or tracking stopped. */
   release() {

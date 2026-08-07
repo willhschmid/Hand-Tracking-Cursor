@@ -118,7 +118,14 @@ export const CSS = `
 .hc-root[data-state="live"] .hc-illo { display: none; }
 .hc-root[data-mini="true"] .hc-illo { padding: 10px; }
 
-.hc-illo-svg { width: 100%; height: 100%; overflow: visible; }
+.hc-illo-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
 
 /* ----------------------------------------------------------------- copy -- */
 
@@ -226,15 +233,10 @@ export const CSS = `
 
 .hc-root[data-mini="true"] .hc-mini-cta { display: inline-flex; }
 
-.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta {
-  background: ${COLOR.white};
-  color: ${COLOR.iconDark};
-}
-
-.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta:hover,
-.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta.hc-hover {
-  background: ${COLOR.border};
-}
+/* Once the camera is on, the only control in the minimized card is the
+   camera-off icon in the top left. The green button is the pre-enabled
+   affordance and has nothing left to offer here. */
+.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta { display: none; }
 
 .hc-root[data-mini="true"][data-state="loading"] .hc-mini-cta { opacity: 0.7; }
 

@@ -84,13 +84,13 @@ $('#targets-reset').addEventListener('click', () => {
 
 // ------------------------------------------------------------ calibration --
 
-const settings = { region: 0.15, cutoff: 1.4, pinch: 0.42, drag: 34, sway: 15, size: 20 };
+const settings = { region: 0.15, cutoff: 1.4, pinch: 0.22, drag: 34, sway: 22, size: 20 };
 
 function renderSnippet() {
   $('#snippet').textContent = `HandCursor.init({
   region: { x: ${settings.region}, y: ${settings.region} },
   smoothing: { minCutoff: ${settings.cutoff}, beta: 0.015 },
-  pinch: { on: ${settings.pinch}, off: ${(settings.pinch + 0.13).toFixed(2)} },
+  pinch: { on: ${settings.pinch}, off: ${(settings.pinch + 0.1).toFixed(2)} },
   drag: { threshold: ${settings.drag} },
   tap: { maxTravel: ${settings.drag - 2} },
   rotation: { maxAngle: ${settings.sway} },
@@ -120,7 +120,8 @@ bindSlider('#s-cutoff', '#v-cutoff', 'cutoff', (value) => {
 
 bindSlider('#s-pinch', '#v-pinch', 'pinch', (value) => {
   cursor.options.pinch.on = value;
-  cursor.options.pinch.off = value + 0.13;
+  cursor.options.pinch.off = value + 0.1;
+  closest = Infinity; // the old floor says nothing about the new threshold
 });
 
 bindSlider(
@@ -197,7 +198,13 @@ const hud = {
   fps: $('#hud-fps'),
   target: $('#hud-target'),
   scroll: $('#hud-scroll'),
+  ratio: $('#hud-ratio'),
+  ratioMin: $('#hud-ratio-min'),
 };
+
+// The tightest pinch seen so far — hold your fingers where you want the click
+// to land, then set the threshold just above this.
+let closest = Infinity;
 
 let frames = 0;
 let lastSample = performance.now();
@@ -207,6 +214,14 @@ document.addEventListener('handcursor:move', (event) => {
   hud.pos.textContent = `${Math.round(x)}, ${Math.round(y)}`;
   hud.pinch.textContent = pinching ? 'closed' : 'open';
   hud.pinch.classList.toggle('is-pinched', pinching);
+
+  const { ratio } = event.detail;
+  hud.ratio.textContent = ratio.toFixed(3);
+  hud.ratio.classList.toggle('is-pinched', ratio < cursor.options.pinch.on);
+  if (ratio < closest) {
+    closest = ratio;
+    hud.ratioMin.textContent = closest.toFixed(3);
+  }
 
   frames += 1;
   const now = performance.now();
@@ -227,6 +242,9 @@ document.addEventListener('handcursor:stop', () => {
   setState('idle');
   hud.pos.textContent = '—';
   hud.fps.textContent = '— fps';
+  hud.ratio.textContent = '—';
+  hud.ratioMin.textContent = '—';
+  closest = Infinity;
 });
 document.addEventListener('handcursor:error', (event) => {
   setState(event.detail.message, 'error');

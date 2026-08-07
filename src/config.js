@@ -37,8 +37,15 @@ export const DEFAULTS = {
   /**
    * Pinch distance (thumb tip to index tip) as a fraction of hand size, with
    * hysteresis so a hovering hand does not chatter between states.
+   *
+   * Fractions, not millimetres, so the gesture works at any distance from the
+   * camera. For scale: the landmarks sit at the centre of each fingertip, so
+   * even with the pads pressed together the ratio bottoms out near 0.15 rather
+   * than 0 — there is not much room below this before pinching stops
+   * registering at all. `handcursor:move` reports the live ratio if you want to
+   * measure your own hand and pick a number.
    */
-  pinch: { on: 0.42, off: 0.55 },
+  pinch: { on: 0.22, off: 0.32 },
 
   /**
    * A press shorter and tighter than this counts as a tap. Both numbers are
@@ -68,8 +75,8 @@ export const DEFAULTS = {
    */
   rotation: {
     enabled: true,
-    maxAngle: 15,
-    gain: 1.2,
+    maxAngle: 22,
+    gain: 1.8,
     minSpeed: 0.6,
     smoothing: 0.12,
   },

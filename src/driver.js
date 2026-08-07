@@ -103,8 +103,11 @@ export class CursorDriver {
       this.touch.move(smoothed.x, smoothed.y);
     }
 
-    this.emit('move', { x: smoothed.x, y: smoothed.y, pinching: this.pinching });
-    return { x: smoothed.x, y: smoothed.y, pinching: this.pinching };
+    // `ratio` is published so a page can show what the pinch actually measures
+    // — the only practical way to tune the threshold to a particular hand.
+    const detail = { x: smoothed.x, y: smoothed.y, pinching: this.pinching, ratio };
+    this.emit('move', detail);
+    return detail;
   }
 
   /** The hand left the frame, or tracking stopped. */

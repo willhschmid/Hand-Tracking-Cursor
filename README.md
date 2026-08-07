@@ -97,7 +97,7 @@ Module builds never auto-mount — call `init()` when you are ready.
 
 | Gesture | What happens |
 | --- | --- |
-| Open hand, move around | The cursor tracks across the viewport and leans up to 15° into its direction of travel |
+| Open hand, move around | The cursor tracks across the viewport and leans up to 22° into its direction of travel |
 | Index finger meets thumb | Click. The skeleton turns green and the cursor scales down while held |
 | Pinch and drag up / down | Scrolls whatever is under the cursor — the page, or a single scrollable element — and flings on release |
 | Hand leaves frame | The cursor fades out and any press is cancelled |
@@ -153,8 +153,12 @@ HandCursor.init({
   // 1€ filter. Raise minCutoff for a snappier cursor, lower it for a calmer one.
   smoothing: { minCutoff: 1.4, beta: 0.015, dCutoff: 1.0 },
 
-  // Pinch distance as a fraction of hand size, with hysteresis.
-  pinch: { on: 0.42, off: 0.55 },
+  // Pinch distance as a fraction of hand size, with hysteresis. Fractions
+  // rather than millimetres, so it works at any distance from the camera.
+  // The landmarks sit at the centre of each fingertip, so even with the pads
+  // touching the ratio bottoms out near 0.15 — there is not much room below
+  // this. `handcursor:move` reports the live ratio so you can measure yours.
+  pinch: { on: 0.22, off: 0.32 },
 
   // A press shorter and tighter than this is a tap. Both are generous next to a
   // touchscreen: a pinch held in mid-air always drifts.
@@ -172,8 +176,8 @@ HandCursor.init({
 
   rotation: {
     enabled: true,
-    maxAngle: 15,            // degrees; the arrow sways, it never spins
-    gain: 1.2,               // degrees per px/frame of horizontal speed
+    maxAngle: 22,            // degrees; the arrow sways, it never spins
+    gain: 1.8,               // degrees per px/frame of horizontal speed
     minSpeed: 0.6,           // px/frame deadzone
     smoothing: 0.12,
   },
@@ -228,7 +232,7 @@ All events fire on `document` and carry the instance in `detail.instance`.
 | --- | --- |
 | `handcursor:start` | — |
 | `handcursor:stop` | — |
-| `handcursor:move` | `x`, `y`, `pinching` |
+| `handcursor:move` | `x`, `y`, `pinching`, `ratio` |
 | `handcursor:press` | `x`, `y` |
 | `handcursor:release` | `x`, `y` |
 | `handcursor:tap` | `x`, `y`, `target`, `internal` |
@@ -241,7 +245,11 @@ document.addEventListener('handcursor:tap', (event) => {
 });
 ```
 
-`handcursor:move` fires every tracked frame — keep its listeners cheap.
+`handcursor:move` fires every tracked frame — keep its listeners cheap. Its
+`ratio` is the live pinch measurement, which is the practical way to tune
+`pinch.on` to a particular hand: hold your fingers where you want a click to
+register, watch the number, and set the threshold just above it. The test page
+does exactly that in its HUD.
 
 ---
 
@@ -289,7 +297,7 @@ Built to the *Hand Tracking Cursor Design System* (August 2026). Tokens live in
 | Icon dark | `#1C1B1F` — icon strokes |
 | Radius | 4px controls, 12px cards and buttons |
 | Trackpad | 260 × 200, 12px padding, 4px corner insets |
-| Minimized | 106 × 106 with a 32 × 32 camera button |
+| Minimized | 106 × 106; the green camera button appears only before the camera is on |
 | Illustration | 66 × 98 on the pre-enabled card |
 | Icons | 24 × 24 Material Symbols in `#1C1B1F`, in 32 × 32 buttons |
 | Live preview | Camera at 15% opacity over the `#F6F6F6` card, so icons stay legible |
@@ -301,12 +309,16 @@ retargeted so the arrow's point sits exactly at the element origin — position,
 rotation and the tapped scale all pivot there, so the tip stays pinned to the
 coordinate being addressed.
 
-Two notes on the pre-enabled card. The hand is generated from the same landmark
-topology as the live overlay rather than being a bitmap, so the resting state
-reads as a frozen frame of the running one; drop a real asset into `.hc-illo` if
-you would rather ship artwork. And a 98px illustration, two lines of copy and a
-32px button cannot sit inside 200px with 12px gaps — the outer padding is held
-at 12px and the two internal gaps settle at 7px each.
+The hand on the pre-enabled card is `assets/hand-graphic.png`, inlined as a data
+URI so the library stays a single file with no external requests. It is
+quantized to a 64-colour palette on the way in, which takes it from 50kB to 6kB
+with no visible difference — the source is flat greys plus two brand colours.
+Re-run `python3 scripts/embed-illustration.py` after changing the artwork.
+
+One measurement note: a 98px illustration, two lines of copy and a 32px button
+cannot sit inside a 200px card with 12px gaps. The outer padding is held at 12px
+and the two internal gaps settle at 7px each. Growing the card to 210px would
+restore the 12px rhythm.
 
 ---
 
@@ -399,6 +411,7 @@ src/
   driver.js       landmarks in, page interaction out (shared entry point)
   pointer.js      taps, drag-scrolling and momentum
   hover.js        CSS :hover emulation
+  hand-graphic.js generated — see scripts/embed-illustration.py
   hand-model.js   MediaPipe loading and camera access
   landmarks.js    hand topology, pinch and control-point math
   skeleton.js     canvas overlay and the static illustration
