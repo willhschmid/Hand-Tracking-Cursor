@@ -23,8 +23,15 @@ const TYPES = {
   '.wasm': 'application/wasm',
 };
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  // There is no page at the root, so send visitors to the one they want.
+  if (url.pathname === '/') {
+    res.writeHead(302, { location: '/demo/' }).end();
+    return;
+  }
+
   let path = join(ROOT, normalize(decodeURIComponent(url.pathname)));
   if (!path.startsWith(ROOT)) {
     res.writeHead(403).end('forbidden');
@@ -46,6 +53,19 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
   }
-}).listen(PORT, () => {
-  console.log(`serving ${ROOT} on http://localhost:${PORT}/demo/`);
+});
+
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(
+      `Port ${PORT} is already in use. Run it somewhere else, for example:\n` +
+        `  PORT=8090 npm run serve`,
+    );
+    process.exit(1);
+  }
+  throw error;
+});
+
+server.listen(PORT, () => {
+  console.log(`Test page: http://localhost:${PORT}/demo/`);
 });

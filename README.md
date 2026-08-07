@@ -54,6 +54,29 @@ The script mounts itself on load. Configure it right on the tag:
 Add `data-manual` to skip the automatic mount and call `HandCursor.init()`
 yourself.
 
+### Adding it to a site you already have
+
+Drop the tag in before `</body>` and you are done — there is no init code, no
+CSS to include and no markup to add. Two things to check on a real site:
+
+**Serve over HTTPS.** Cameras are blocked on plain `http://`. The trackpad says
+so explicitly rather than failing silently.
+
+**Content Security Policy.** If your site sends one, the MediaPipe runtime and
+model need to be allowed through:
+
+```
+script-src  'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval';
+connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com;
+worker-src  'self' blob:;
+```
+
+Host the assets yourself (see below) and those all collapse back to `'self'`.
+
+One caveat on hover: the `:hover` mirroring reads your stylesheets, which works
+for any CSS served from your own origin. Stylesheets on a third-party CDN
+without CORS headers cannot be read, so their hover rules will not respond.
+
 ### npm
 
 ```bash
