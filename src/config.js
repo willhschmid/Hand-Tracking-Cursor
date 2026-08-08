@@ -64,9 +64,19 @@ export const DEFAULTS = {
   drag: {
     threshold: 34,
     holdDelay: 140,
+    /**
+     * How much of the remaining distance the page closes each 60fps frame while
+     * dragging. Landmarks arrive slower than the screen repaints — on a phone,
+     * far slower — so applying each one the instant it lands makes the page
+     * lurch and stall. Easing toward the target instead spreads that into
+     * something continuous. 1 disables the smoothing.
+     */
+    follow: 0.22,
+    /** Fling decay, written per 60fps frame but applied over real time. */
     friction: 0.94,
-    minVelocity: 0.4,
-    maxVelocity: 60,
+    /** Fling limits, in CSS px per second. */
+    minVelocity: 24,
+    maxVelocity: 3600,
   },
 
   /**

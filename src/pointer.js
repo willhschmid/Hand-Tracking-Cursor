@@ -1,3 +1,5 @@
+import { ScrollRunner, scrollTargetFor } from './scroll.js';
+
 /**
  * Turns cursor movement plus pinch state into page interaction.
  *
@@ -6,8 +8,9 @@
  * release.
  */
 
-const SCROLLABLE = /(auto|scroll|overlay)/;
 const FOCUSABLE = 'a[href], button, input, select, textarea, summary, [tabindex]';
+
+const SECOND = 1000;
 
 /** Walks through open shadow roots to find the element actually under a point. */
 export function deepElementFromPoint(x, y) {
@@ -18,39 +21,6 @@ export function deepElementFromPoint(x, y) {
     el = inner;
   }
   return el;
-}
-
-/** Nearest ancestor that can actually scroll, falling back to the document. */
-function scrollTargetFor(el) {
-  let node = el;
-  while (node && node !== document.documentElement && node !== document.body) {
-    if (node.nodeType === 1) {
-      const style = getComputedStyle(node);
-      const canY =
-        SCROLLABLE.test(style.overflowY) && node.scrollHeight - node.clientHeight > 1;
-      const canX =
-        SCROLLABLE.test(style.overflowX) && node.scrollWidth - node.clientWidth > 1;
-      if (canY || canX) return { node, canX, canY };
-    }
-    node = node.parentElement || node.getRootNode()?.host || null;
-  }
-  const doc = document.scrollingElement || document.documentElement;
-  return {
-    node: doc,
-    canX: doc.scrollWidth - doc.clientWidth > 1,
-    canY: doc.scrollHeight - doc.clientHeight > 1,
-  };
-}
-
-function scrollBy({ node, canX, canY }, dx, dy) {
-  const top = node.scrollTop - (canY ? dy : 0);
-  const left = node.scrollLeft - (canX ? dx : 0);
-  try {
-    node.scrollTo({ top, left, behavior: 'instant' });
-  } catch {
-    node.scrollTop = top;
-    node.scrollLeft = left;
-  }
 }
 
 function eventInit(x, y, extra) {
@@ -108,7 +78,7 @@ export class TouchEmulator {
     this.last = null;
     this.velocity = { x: 0, y: 0 };
     this.scrollTarget = null;
-    this.momentumFrame = null;
+    this.scroller = new ScrollRunner(options);
   }
 
   /**
@@ -163,14 +133,15 @@ export class TouchEmulator {
 
   /** Pinch closed. */
   press(x, y, now) {
-    this.stopMomentum();
+    this.scroller.stop();
     const { el, internal } = this.resolve(x, y);
     this.pressing = true;
     this.dragging = false;
     this.origin = { x, y, t: now, el, internal };
-    this.last = { x, y };
+    this.last = { x, y, t: now };
     this.velocity = { x: 0, y: 0 };
     this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
+    this.scroller.setTarget(this.scrollTarget);
   }
 
   /** Cursor moved while the pinch is held. */
@@ -179,11 +150,15 @@ export class TouchEmulator {
 
     const dx = x - this.last.x;
     const dy = y - this.last.y;
-    this.last = { x, y };
+    // Landmark frames are not evenly spaced, so velocity is measured against
+    // real elapsed time rather than counted per frame. Otherwise a fling thrown
+    // at 20fps would travel three times as far as the same gesture at 60fps.
+    const dt = Math.max(now - this.last.t, 1) / SECOND;
+    this.last = { x, y, t: now };
 
     // Exponential average keeps the fling velocity stable across jittery frames.
-    this.velocity.x = this.velocity.x * 0.7 + dx * 0.3;
-    this.velocity.y = this.velocity.y * 0.7 + dy * 0.3;
+    this.velocity.x = this.velocity.x * 0.7 + (dx / dt) * 0.3;
+    this.velocity.y = this.velocity.y * 0.7 + (dy / dt) * 0.3;
 
     if (!this.dragging) {
       const { threshold, holdDelay } = this.options.drag;
@@ -201,7 +176,10 @@ export class TouchEmulator {
       // the content would lurch by `threshold` px the instant a drag begins.
     }
 
-    if (this.scrollTarget) scrollBy(this.scrollTarget, dx, dy);
+    // Hand off to the display-rate runner rather than scrolling here: this
+    // method is called at whatever rate the model manages, which is not the
+    // rate the screen repaints.
+    this.scroller.push(dx, dy);
   }
 
   /** Pinch released: either a tap or the end of a drag. */
@@ -213,7 +191,13 @@ export class TouchEmulator {
 
     if (this.dragging) {
       this.dragging = false;
-      this.startMomentum();
+      // Fold in whatever the page has not caught up on yet, so the throw starts
+      // from where the hand actually was.
+      const pending = this.scroller.pending;
+      this.scroller.fling(
+        this.velocity.x + pending.x / SECOND,
+        this.velocity.y + pending.y / SECOND,
+      );
       return;
     }
 
@@ -256,37 +240,10 @@ export class TouchEmulator {
     this.onTap?.({ x, y, target: el, internal: false });
   }
 
-  startMomentum() {
-    const { friction, minVelocity, maxVelocity } = this.options.drag;
-    const clamp = (v) => Math.max(-maxVelocity, Math.min(maxVelocity, v));
-    let vx = clamp(this.velocity.x);
-    let vy = clamp(this.velocity.y);
-    const target = this.scrollTarget;
-    if (!target || Math.hypot(vx, vy) < minVelocity) return;
-
-    const step = () => {
-      vx *= friction;
-      vy *= friction;
-      if (Math.hypot(vx, vy) < minVelocity) {
-        this.momentumFrame = null;
-        return;
-      }
-      scrollBy(target, vx, vy);
-      this.momentumFrame = requestAnimationFrame(step);
-    };
-    this.momentumFrame = requestAnimationFrame(step);
-  }
-
-  stopMomentum() {
-    if (this.momentumFrame !== null) {
-      cancelAnimationFrame(this.momentumFrame);
-      this.momentumFrame = null;
-    }
-  }
 
   /** The hand left the frame: drop everything without firing a tap. */
   cancel(x = 0, y = 0) {
-    this.stopMomentum();
+    this.scroller.stop();
     this.pressing = false;
     this.dragging = false;
     this.origin = null;

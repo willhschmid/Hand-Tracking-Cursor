@@ -90,9 +90,19 @@ var HandCursor = (() => {
     drag: {
       threshold: 34,
       holdDelay: 140,
+      /**
+       * How much of the remaining distance the page closes each 60fps frame while
+       * dragging. Landmarks arrive slower than the screen repaints — on a phone,
+       * far slower — so applying each one the instant it lands makes the page
+       * lurch and stall. Easing toward the target instead spreads that into
+       * something continuous. 1 disables the smoothing.
+       */
+      follow: 0.22,
+      /** Fling decay, written per 60fps frame but applied over real time. */
       friction: 0.94,
-      minVelocity: 0.4,
-      maxVelocity: 60
+      /** Fling limits, in CSS px per second. */
+      minVelocity: 24,
+      maxVelocity: 3600
     },
     /**
      * The playful bit: the arrow leans into the direction it travels, capped so
@@ -796,18 +806,8 @@ var HandCursor = (() => {
     }
   };
 
-  // src/pointer.js
+  // src/scroll.js
   var SCROLLABLE = /(auto|scroll|overlay)/;
-  var FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]";
-  function deepElementFromPoint(x, y) {
-    let el = document.elementFromPoint(x, y);
-    while (el?.shadowRoot) {
-      const inner = el.shadowRoot.elementFromPoint(x, y);
-      if (!inner || inner === el) break;
-      el = inner;
-    }
-    return el;
-  }
   function scrollTargetFor(el) {
     let node = el;
     while (node && node !== document.documentElement && node !== document.body) {
@@ -826,7 +826,7 @@ var HandCursor = (() => {
       canY: doc.scrollHeight - doc.clientHeight > 1
     };
   }
-  function scrollBy({ node, canX, canY }, dx, dy) {
+  function applyScroll({ node, canX, canY }, dx, dy) {
     const top = node.scrollTop - (canY ? dy : 0);
     const left = node.scrollLeft - (canX ? dx : 0);
     try {
@@ -835,6 +835,109 @@ var HandCursor = (() => {
       node.scrollTop = top;
       node.scrollLeft = left;
     }
+  }
+  var ScrollRunner = class {
+    constructor(options) {
+      this.options = options;
+      this.target = null;
+      this.pendingX = 0;
+      this.pendingY = 0;
+      this.velocityX = 0;
+      this.velocityY = 0;
+      this.flinging = false;
+      this.frame = null;
+      this.lastFrameAt = 0;
+      this.tick = this.tick.bind(this);
+    }
+    setTarget(target) {
+      if (target !== this.target) {
+        this.pendingX = 0;
+        this.pendingY = 0;
+      }
+      this.target = target;
+    }
+    /** The hand moved. Adds to what the page still owes. */
+    push(dx, dy) {
+      if (!this.target) return;
+      this.flinging = false;
+      this.pendingX += dx;
+      this.pendingY += dy;
+      this.start();
+    }
+    /** Pinch released while moving: carry on under momentum. */
+    fling(velocityX, velocityY) {
+      const { minVelocity, maxVelocity } = this.options.drag;
+      const clamp2 = (v) => Math.max(-maxVelocity, Math.min(maxVelocity, v));
+      this.velocityX = clamp2(velocityX);
+      this.velocityY = clamp2(velocityY);
+      if (Math.hypot(this.velocityX, this.velocityY) < minVelocity) return;
+      this.flinging = true;
+      this.start();
+    }
+    start() {
+      if (this.frame !== null) return;
+      this.lastFrameAt = 0;
+      this.frame = requestAnimationFrame(this.tick);
+    }
+    stop() {
+      if (this.frame !== null) {
+        cancelAnimationFrame(this.frame);
+        this.frame = null;
+      }
+      this.flinging = false;
+      this.pendingX = 0;
+      this.pendingY = 0;
+      this.velocityX = 0;
+      this.velocityY = 0;
+    }
+    tick(now) {
+      this.frame = null;
+      if (!this.target) return;
+      const dt = this.lastFrameAt ? Math.min((now - this.lastFrameAt) / 1e3, 1 / 20) : 1 / 60;
+      this.lastFrameAt = now;
+      let dx = 0;
+      let dy = 0;
+      if (this.flinging) {
+        const { friction, minVelocity } = this.options.drag;
+        const decay = friction ** (dt * 60);
+        this.velocityX *= decay;
+        this.velocityY *= decay;
+        dx = this.velocityX * dt;
+        dy = this.velocityY * dt;
+        if (Math.hypot(this.velocityX, this.velocityY) < minVelocity) {
+          this.flinging = false;
+        }
+      } else {
+        const follow = this.options.drag.follow;
+        const k = follow >= 1 ? 1 : 1 - (1 - follow) ** (dt * 60);
+        dx = this.pendingX * k;
+        dy = this.pendingY * k;
+        this.pendingX -= dx;
+        this.pendingY -= dy;
+        if (Math.abs(this.pendingX) < 0.01) this.pendingX = 0;
+        if (Math.abs(this.pendingY) < 0.01) this.pendingY = 0;
+      }
+      if (dx || dy) applyScroll(this.target, dx, dy);
+      const idle = !this.flinging && this.pendingX === 0 && this.pendingY === 0;
+      if (!idle) this.frame = requestAnimationFrame(this.tick);
+    }
+    /** Distance the page still owes, so a release can fold it into the fling. */
+    get pending() {
+      return { x: this.pendingX, y: this.pendingY };
+    }
+  };
+
+  // src/pointer.js
+  var FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]";
+  var SECOND = 1e3;
+  function deepElementFromPoint(x, y) {
+    let el = document.elementFromPoint(x, y);
+    while (el?.shadowRoot) {
+      const inner = el.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === el) break;
+      el = inner;
+    }
+    return el;
   }
   function eventInit(x, y, extra) {
     return {
@@ -875,7 +978,7 @@ var HandCursor = (() => {
       this.last = null;
       this.velocity = { x: 0, y: 0 };
       this.scrollTarget = null;
-      this.momentumFrame = null;
+      this.scroller = new ScrollRunner(options);
     }
     /**
      * What is under the cursor, and whether that is the trackpad itself.
@@ -923,23 +1026,25 @@ var HandCursor = (() => {
     }
     /** Pinch closed. */
     press(x, y, now) {
-      this.stopMomentum();
+      this.scroller.stop();
       const { el, internal } = this.resolve(x, y);
       this.pressing = true;
       this.dragging = false;
       this.origin = { x, y, t: now, el, internal };
-      this.last = { x, y };
+      this.last = { x, y, t: now };
       this.velocity = { x: 0, y: 0 };
       this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
+      this.scroller.setTarget(this.scrollTarget);
     }
     /** Cursor moved while the pinch is held. */
     drag(x, y, now) {
       if (!this.pressing) return;
       const dx = x - this.last.x;
       const dy = y - this.last.y;
-      this.last = { x, y };
-      this.velocity.x = this.velocity.x * 0.7 + dx * 0.3;
-      this.velocity.y = this.velocity.y * 0.7 + dy * 0.3;
+      const dt = Math.max(now - this.last.t, 1) / SECOND;
+      this.last = { x, y, t: now };
+      this.velocity.x = this.velocity.x * 0.7 + dx / dt * 0.3;
+      this.velocity.y = this.velocity.y * 0.7 + dy / dt * 0.3;
       if (!this.dragging) {
         const { threshold, holdDelay } = this.options.drag;
         if (now - this.origin.t < holdDelay) return;
@@ -948,7 +1053,7 @@ var HandCursor = (() => {
         this.dragging = true;
         this.leaveHovered(x, y);
       }
-      if (this.scrollTarget) scrollBy(this.scrollTarget, dx, dy);
+      this.scroller.push(dx, dy);
     }
     /** Pinch released: either a tap or the end of a drag. */
     release(x, y, now) {
@@ -958,7 +1063,11 @@ var HandCursor = (() => {
       this.origin = null;
       if (this.dragging) {
         this.dragging = false;
-        this.startMomentum();
+        const pending = this.scroller.pending;
+        this.scroller.fling(
+          this.velocity.x + pending.x / SECOND,
+          this.velocity.y + pending.y / SECOND
+        );
         return;
       }
       const travel = Math.hypot(x - origin.x, y - origin.y);
@@ -991,34 +1100,9 @@ var HandCursor = (() => {
       fireMouse(el, "click", x, y, { buttons: 0, button: 0, detail: 1 });
       this.onTap?.({ x, y, target: el, internal: false });
     }
-    startMomentum() {
-      const { friction, minVelocity, maxVelocity } = this.options.drag;
-      const clamp2 = (v) => Math.max(-maxVelocity, Math.min(maxVelocity, v));
-      let vx = clamp2(this.velocity.x);
-      let vy = clamp2(this.velocity.y);
-      const target = this.scrollTarget;
-      if (!target || Math.hypot(vx, vy) < minVelocity) return;
-      const step = () => {
-        vx *= friction;
-        vy *= friction;
-        if (Math.hypot(vx, vy) < minVelocity) {
-          this.momentumFrame = null;
-          return;
-        }
-        scrollBy(target, vx, vy);
-        this.momentumFrame = requestAnimationFrame(step);
-      };
-      this.momentumFrame = requestAnimationFrame(step);
-    }
-    stopMomentum() {
-      if (this.momentumFrame !== null) {
-        cancelAnimationFrame(this.momentumFrame);
-        this.momentumFrame = null;
-      }
-    }
     /** The hand left the frame: drop everything without firing a tap. */
     cancel(x = 0, y = 0) {
-      this.stopMomentum();
+      this.scroller.stop();
       this.pressing = false;
       this.dragging = false;
       this.origin = null;

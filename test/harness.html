@@ -42,6 +42,18 @@
       // Smoothing is turned almost off so a fed position lands immediately.
       window.hc = HandCursor.init({ font: false, smoothing: { minCutoff: 60, beta: 0 } });
 
+      // ?lenis=1 loads Lenis over the top. Smooth-scroll libraries are the
+      // obvious suspect for scroll jank, so the suite checks we coexist.
+      window.lenisReady = (async () => {
+        if (new URLSearchParams(location.search).get('lenis') !== '1') return false;
+        const { default: Lenis } = await import('/node_modules/lenis/dist/lenis.mjs');
+        const lenis = new Lenis({ autoRaf: false });
+        window.lenis = lenis;
+        const raf = (t) => { lenis.raf(t); requestAnimationFrame(raf); };
+        requestAnimationFrame(raf);
+        return true;
+      })();
+
       const OPEN = [
         [0.50, 0.95], [0.67, 0.87], [0.79, 0.75], [0.86, 0.64], [0.91, 0.54],
         [0.58, 0.53], [0.61, 0.37], [0.62, 0.27], [0.63, 0.17],
@@ -66,10 +78,60 @@
       };
 
       let clock = 1000;
-      window.feed = (cx, cy, pinch, step = 33) => {
+      window.feed = (cx, cy, pinch, step = 16) => {
         clock += step;
         hc.consumeHand(window.makeHand(cx, cy, pinch), clock, VIDEO);
         return { x: hc.position.x, y: hc.position.y, pinching: hc.pinching };
+      };
+
+      /**
+       * Drives a pinch-drag at `trackingFps` — the rate landmarks really arrive
+       * — while sampling the scroll position every repaint. Jank lives in the
+       * gap between those two rates, so this is what measures it.
+       */
+      window.timedDrag = async ({ trackingFps = 20, seconds = 1.2 } = {}) => {
+        window.scrollTo(0, 0);
+        window.lenis?.scrollTo(0, { immediate: true });
+        await new Promise((r) => setTimeout(r, 200));
+
+        const samples = [];
+        let sampling = true;
+        const sample = () => {
+          if (!sampling) return;
+          samples.push(window.scrollY);
+          requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+
+        const stepMs = 1000 / trackingFps;
+        const steps = Math.round(seconds * trackingFps);
+        const cx = innerWidth - 60;           // clear of the trackpad card
+        const bottom = innerHeight * 0.85;
+        const top = innerHeight * 0.15;
+        let cy = bottom;
+
+        for (let i = 0; i < 30; i++) window.feed(...window.toCamera(cx, cy), false, stepMs);
+        window.feed(...window.toCamera(cx, cy), true, stepMs);
+        for (let i = 0; i < steps; i++) {
+          cy -= (bottom - top) / steps;
+          window.feed(...window.toCamera(cx, cy), true, stepMs);
+          await new Promise((r) => setTimeout(r, stepMs));
+        }
+        window.feed(...window.toCamera(cx, cy), false, stepMs);
+        await new Promise((r) => setTimeout(r, 300));
+        sampling = false;
+
+        const deltas = [];
+        for (let i = 1; i < samples.length; i++) deltas.push(samples[i] - samples[i - 1]);
+        // Only judge frames from the moment the page actually starts moving.
+        const first = deltas.findIndex((d) => Math.abs(d) > 0.5);
+        const active = first === -1 ? [] : deltas.slice(first);
+        return {
+          frames: active.length,
+          stalled: active.filter((d) => Math.abs(d) <= 0.5).length,
+          biggestJump: Math.max(0, ...active.map(Math.abs)),
+          scrolled: samples.at(-1) - samples[0],
+        };
       };
 
       /** Viewport point -> camera coordinates, undoing mirror and dead zone. */

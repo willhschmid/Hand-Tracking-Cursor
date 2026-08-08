@@ -73,6 +73,14 @@ worker-src  'self' blob:;
 
 Host the assets yourself (see below) and those all collapse back to `'self'`.
 
+**Smooth-scroll libraries.** Lenis, Locomotive and friends are fine. In their
+default native-scroll mode they observe the scroll position rather than owning
+it, so they simply follow along; the test suite runs its scroll checks against
+a real Lenis instance to keep it that way. If a library is configured to
+transform a wrapper instead of scrolling natively, it will not see these
+scrolls — point `drag.follow` at `1` and drive the library from
+`handcursor:move` yourself.
+
 One caveat on hover: the `:hover` mirroring reads your stylesheets, which works
 for any CSS served from your own origin. Stylesheets on a third-party CDN
 without CORS headers cannot be read, so their hover rules will not respond.
@@ -169,9 +177,10 @@ HandCursor.init({
   drag: {
     threshold: 34,           // px of travel before a scroll starts
     holdDelay: 140,          // ms the pinch must be held first
-    friction: 0.94,
-    minVelocity: 0.4,
-    maxVelocity: 60,
+    follow: 0.22,            // how fast the page catches the hand; 1 = no easing
+    friction: 0.94,          // fling decay, per 60fps frame, applied over real time
+    minVelocity: 24,         // px/s — below this a fling stops
+    maxVelocity: 3600,       // px/s
   },
 
   rotation: {
@@ -265,14 +274,21 @@ does exactly that in its HUD.
    leaving frame.
 4. **Smoothing.** A [1€ filter](https://gery.casiez.net/1euro/) removes jitter
    while the hand is still without adding lag while it moves.
-5. **Sway.** The arrow leans by horizontal *speed*, not by the direction of the
+5. **Scrolling.** Landmarks arrive as fast as the model manages, which on a
+   phone can be 15-20fps against a 60Hz display. Applying each frame's delta on
+   arrival makes the page jump and then stall for two repaints — a staircase
+   that reads as skipping. The tracker only states where the page *should* be;
+   a separate display-rate loop eases toward it, at the cost of ~50ms of lag.
+   The same loop runs the release fling, so the two never fight over the scroll
+   position.
+6. **Sway.** The arrow leans by horizontal *speed*, not by the direction of the
    velocity vector. Pointing it along `atan2(vy, vx)` is the obvious approach
    and is unusable: the direction of a near-zero vector is noise, so a hand
    holding still whips the cursor through every angle.
-6. **Pinch.** Thumb-to-index distance is measured as a fraction of hand size, so
+7. **Pinch.** Thumb-to-index distance is measured as a fraction of hand size, so
    it works at any distance from the camera. Separate on/off thresholds stop a
    hovering hand from chattering.
-7. **Interaction.** A short, tight pinch is a tap; a pinch that travels becomes a
+8. **Interaction.** A short, tight pinch is a tap; a pinch that travels becomes a
    scroll on the nearest scrollable ancestor, with exponential-decay momentum on
    release.
 
@@ -415,7 +431,8 @@ src/
   panel.js        the trackpad card and its states
   cursor.js       the arrow: rotation and press scaling
   driver.js       landmarks in, page interaction out (shared entry point)
-  pointer.js      taps, drag-scrolling and momentum
+  pointer.js      taps and gesture state
+  scroll.js       display-rate scrolling and the fling
   hover.js        CSS :hover emulation
   hand-graphic.js generated — see scripts/embed-illustration.mjs
   hand-model.js   MediaPipe loading and camera access

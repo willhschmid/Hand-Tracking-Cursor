@@ -16,7 +16,12 @@ import { extname, join, normalize } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const PORT = 8123;
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const TYPES = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.css': 'text/css',
+};
 
 const server = createServer(async (req, res) => {
   const path = join(ROOT, normalize(new URL(req.url, 'http://localhost').pathname));
@@ -260,7 +265,12 @@ check(
   `${JSON.stringify(tap.at)} vs ${JSON.stringify(tap.target)}`,
 );
 
-const elementScroll = await page.evaluate(() => {
+// Scrolling is applied by a display-rate animation loop rather than inline, so
+// these need to let frames actually run before reading the result.
+const settle = (ms = 500) =>
+  page.evaluate((wait) => new Promise((resolve) => setTimeout(resolve, wait)), ms);
+
+const elementScroll = await page.evaluate(async () => {
   const box = document.getElementById('box');
   box.scrollTop = 0;
   const rect = box.getBoundingClientRect();
@@ -272,9 +282,9 @@ const elementScroll = await page.evaluate(() => {
     cy -= 3;
     window.feed(...window.toCamera(cx, cy), true);
   }
-  const scrolled = box.scrollTop;
   window.feed(...window.toCamera(cx, cy), false);
-  return { scrolled, page: window.scrollY };
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  return { scrolled: box.scrollTop, page: window.scrollY };
 });
 check(
   'pinch-drag scrolls the element under the cursor',
@@ -293,9 +303,12 @@ const pageScroll = await page.evaluate(async () => {
     cy -= 4;
     window.feed(...window.toCamera(cx, cy), true);
   }
+  // Sampled a beat after the drag, once the runner has caught up, then again
+  // after the fling has played out.
+  await new Promise((resolve) => setTimeout(resolve, 250));
   const during = window.scrollY;
   window.feed(...window.toCamera(cx, cy), false);
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 700));
   return { during, after: window.scrollY };
 });
 check('pinch-drag scrolls the page', pageScroll.during > 40, JSON.stringify(pageScroll));
@@ -327,6 +340,7 @@ const driftyTap = await page.evaluate(async () => {
     window.feed(...window.toCamera(cx, cy), true);
   }
   window.feed(...window.toCamera(cx, cy), false);
+  await new Promise((resolve) => setTimeout(resolve, 400));
   return {
     clicked: Number(document.getElementById('out').textContent) - before,
     scrolled: window.scrollY - scrollBefore,
@@ -470,6 +484,56 @@ check(
   overlay.pinkAfter === 0 && overlay.greenAfter > overlay.green,
   JSON.stringify(overlay),
 );
+
+// ------------------------------------------------------- scroll smoothness --
+//
+// The regression this guards: scroll used to be applied once per landmark
+// frame, so on a slow tracker the page advanced ~25px and then sat still for
+// two repaints. Measured per repaint, that is a staircase; it reads as
+// skipping. Scrolling now runs on its own display-rate loop, so a slow tracker
+// should look almost the same as a fast one.
+
+for (const lenis of [false, true]) {
+  const smooth = await browser.newPage({ viewport: { width: 420, height: 800 } });
+  const errors = [];
+  smooth.on('pageerror', (error) => errors.push(error.message));
+  await smooth.goto(
+    `http://localhost:${PORT}/test/harness.html${lenis ? '?lenis=1' : ''}`,
+    { waitUntil: 'load' },
+  );
+  const lenisOn = await smooth.evaluate(() => window.lenisReady);
+  const slow = await smooth.evaluate(() => window.timedDrag({ trackingFps: 15 }));
+  const fast = await smooth.evaluate(() => window.timedDrag({ trackingFps: 60 }));
+  await smooth.close();
+
+  const label = lenis ? 'with Lenis' : 'on a plain page';
+  check(
+    `${label}: Lenis presence matches the fixture`,
+    lenisOn === lenis,
+    `expected ${lenis}, got ${lenisOn}`,
+  );
+  check(
+    `${label}: a 15fps tracker still scrolls something`,
+    slow.scrolled > 200,
+    JSON.stringify(slow),
+  );
+  check(
+    `${label}: a 15fps tracker does not stall the page`,
+    slow.stalled / slow.frames < 0.25,
+    `${slow.stalled}/${slow.frames} repaints stood still — ${JSON.stringify(slow)}`,
+  );
+  check(
+    `${label}: a 15fps tracker does not lurch`,
+    slow.biggestJump < 20,
+    `biggest single-repaint jump ${slow.biggestJump}px — ${JSON.stringify(slow)}`,
+  );
+  check(
+    `${label}: slow tracking is nearly as smooth as fast`,
+    slow.stalled / slow.frames < fast.stalled / fast.frames + 0.15,
+    `slow ${slow.stalled}/${slow.frames} vs fast ${fast.stalled}/${fast.frames}`,
+  );
+  check(`${label}: no errors during the drag`, errors.length === 0, errors.join(' | '));
+}
 
 check('no uncaught page errors', pageErrors.length === 0, pageErrors.join(' | '));
 
