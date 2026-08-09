@@ -179,8 +179,9 @@ export class TouchEmulator {
 
     // Hand off to the display-rate runner rather than scrolling here: this
     // method is called at whatever rate the model manages, which is not the
-    // rate the screen repaints.
-    this.scroller.push(dx, dy);
+    // rate the screen repaints. `now` goes with it, so the runner times the
+    // path by when the hand was seen rather than when this happened to run.
+    this.scroller.push(dx, dy, now);
   }
 
   /**

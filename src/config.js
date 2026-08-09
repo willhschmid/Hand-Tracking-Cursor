@@ -105,13 +105,30 @@ export const DEFAULTS = {
     /** Multiplies how far a throw coasts. 1 matches the frame-by-frame decay. */
     flingScale: 1,
     /**
-     * `write` mode only: how much of the remaining distance the page closes
-     * each 60fps frame. Landmarks arrive slower than the screen repaints, so
-     * applying each one the instant it lands makes the page lurch and stall.
-     * Easing toward the target spreads that into something continuous.
-     * 1 disables the smoothing.
+     * Set to 1 to apply every landmark the instant it lands, turning the
+     * resampling below off. Only sensible when the tracker is keeping up with
+     * the display; below that it stutters, which is what the resampler exists
+     * to fix.
      */
     follow: 0.22,
+    /**
+     * How far behind the hand the page is drawn, as a multiple of the measured
+     * gap between landmarks, clamped to the millisecond bounds below.
+     *
+     * Landmarks arrive at 15-25fps against a 60Hz display, so most repaints
+     * have no new information. Rather than guess at one, the runner draws the
+     * hand's path slightly in the past and reads between the two samples either
+     * side — which turns a hand moving at a constant speed into a page moving
+     * at a constant speed, whatever the tracker is doing.
+     *
+     * It has to be more than 1: reading between two samples needs one on each
+     * side, and inference time varies enough that aiming at exactly one
+     * interval keeps running off the end of the path. Raise it if the page
+     * still ripples, lower it for less lag.
+     */
+    resample: 1.35,
+    resampleMin: 24,
+    resampleMax: 90,
     /**
      * How far back a release looks to work out how fast the hand was going, in
      * ms. Wide enough to survive the frame or two it takes for a pinch to read

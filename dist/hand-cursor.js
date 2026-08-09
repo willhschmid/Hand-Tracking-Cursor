@@ -131,13 +131,30 @@ var HandCursor = (() => {
       /** Multiplies how far a throw coasts. 1 matches the frame-by-frame decay. */
       flingScale: 1,
       /**
-       * `write` mode only: how much of the remaining distance the page closes
-       * each 60fps frame. Landmarks arrive slower than the screen repaints, so
-       * applying each one the instant it lands makes the page lurch and stall.
-       * Easing toward the target spreads that into something continuous.
-       * 1 disables the smoothing.
+       * Set to 1 to apply every landmark the instant it lands, turning the
+       * resampling below off. Only sensible when the tracker is keeping up with
+       * the display; below that it stutters, which is what the resampler exists
+       * to fix.
        */
       follow: 0.22,
+      /**
+       * How far behind the hand the page is drawn, as a multiple of the measured
+       * gap between landmarks, clamped to the millisecond bounds below.
+       *
+       * Landmarks arrive at 15-25fps against a 60Hz display, so most repaints
+       * have no new information. Rather than guess at one, the runner draws the
+       * hand's path slightly in the past and reads between the two samples either
+       * side — which turns a hand moving at a constant speed into a page moving
+       * at a constant speed, whatever the tracker is doing.
+       *
+       * It has to be more than 1: reading between two samples needs one on each
+       * side, and inference time varies enough that aiming at exactly one
+       * interval keeps running off the end of the path. Raise it if the page
+       * still ripples, lower it for less lag.
+       */
+      resample: 1.35,
+      resampleMin: 24,
+      resampleMax: 90,
       /**
        * How far back a release looks to work out how fast the hand was going, in
        * ms. Wide enough to survive the frame or two it takes for a pinch to read
@@ -933,9 +950,13 @@ var HandCursor = (() => {
     const target = node === document.scrollingElement ? document.documentElement : node;
     return getComputedStyle(target).scrollBehavior === "smooth";
   }
+  function snap(value) {
+    const dpr = window.devicePixelRatio || 1;
+    return Math.round(value * dpr) / dpr;
+  }
   function applyScroll({ node, canX, canY }, dx, dy) {
-    const top = Math.round(node.scrollTop - (canY ? dy : 0));
-    const left = Math.round(node.scrollLeft - (canX ? dx : 0));
+    const top = snap(node.scrollTop - (canY ? dy : 0));
+    const left = snap(node.scrollLeft - (canX ? dx : 0));
     try {
       node.scrollTo({ top, left, behavior: "instant" });
     } catch {
@@ -949,13 +970,20 @@ var HandCursor = (() => {
   function throwDistance(velocity, friction, scale) {
     return velocity * decayTau(friction) * scale;
   }
+  var HEAD_DRIFT = 0.05;
   var ScrollRunner = class {
     constructor(options, debug) {
       this.options = options;
       this.debug = debug;
       this.target = null;
-      this.pendingX = 0;
-      this.pendingY = 0;
+      this.askedX = 0;
+      this.askedY = 0;
+      this.appliedX = 0;
+      this.appliedY = 0;
+      this.path = [];
+      this.interval = 0;
+      this.head = 0;
+      this.live = false;
       this.velocityX = 0;
       this.velocityY = 0;
       this.flinging = false;
@@ -965,10 +993,20 @@ var HandCursor = (() => {
       this.lastRetargetAt = 0;
       this.tick = this.tick.bind(this);
     }
+    /** Throws away the hand's path and everything measured from it. */
+    resetPath() {
+      this.askedX = 0;
+      this.askedY = 0;
+      this.appliedX = 0;
+      this.appliedY = 0;
+      this.path = [];
+      this.interval = 0;
+      this.head = 0;
+      this.live = false;
+    }
     setTarget(target) {
       if (target !== this.target) {
-        this.pendingX = 0;
-        this.pendingY = 0;
+        this.resetPath();
         this.releaseBehavior();
       }
       this.target = target;
@@ -985,20 +1023,119 @@ var HandCursor = (() => {
       this.restoreBehavior = null;
     }
     /**
-     * The hand moved. Adds to what the page still owes.
+     * The hand moved. Records where it now wants the page.
      *
-     * `native` hands the distance to the browser; `write` and `hybrid` both track
-     * the hand directly, frame by frame, because during a drag latency is far
-     * more noticeable than anything else — the page should sit under the hand,
-     * not arrive after it.
+     * `native` hands the distance straight to the browser; `write` and `hybrid`
+     * both track the hand themselves, because during a drag latency is far more
+     * noticeable than anything else — the page should sit under the hand, not
+     * arrive after it.
+     *
+     * `now` is the timestamp the hand was *sampled* at, not the moment this runs.
+     * They are not the same: between the two sits a MediaPipe inference, which
+     * takes tens of milliseconds on a phone and a different number of them every
+     * frame. Timing the path by arrival would stamp that variation onto a
+     * distance that was measured without it, and report a hand moving at a
+     * constant speed as one lurching between speeds.
      */
-    push(dx, dy) {
+    push(dx, dy, now) {
       if (!this.target) return;
       this.flinging = false;
-      this.pendingX += dx;
-      this.pendingY += dy;
+      this.live = true;
+      const previous = this.path.at(-1);
+      if (previous) {
+        const gap = now - previous.t;
+        if (gap >= 8 && gap <= 250) {
+          this.interval = this.interval ? this.interval * 0.7 + gap * 0.3 : gap;
+        }
+      }
+      if (this.path.length === 0) {
+        const assumed = this.options.drag.resampleMax;
+        this.path.push({ t: now - assumed, x: this.askedX, y: this.askedY });
+      }
+      this.askedX += dx;
+      this.askedY += dy;
+      this.path.push({ t: now, x: this.askedX, y: this.askedY });
+      while (this.path.length > 2 && now - this.path[0].t > 1e3) this.path.shift();
       if (this.options.drag.mode === "native") this.retarget();
       else this.start();
+    }
+    /**
+     * How far behind the hand the page is rendered, in ms.
+     *
+     * Deliberately a little longer than one landmark interval. Reading between
+     * two samples needs a sample on each side, so the render point has to sit
+     * behind the newest one — and inference time varies enough frame to frame
+     * that aiming at exactly one interval would keep running off the end.
+     */
+    delay() {
+      const { resample, resampleMin, resampleMax } = this.options.drag;
+      if (!this.interval) return resampleMax;
+      return Math.max(resampleMin, Math.min(resampleMax, this.interval * resample));
+    }
+    /**
+     * Where the hand had asked the page to be at time `t`, read between the two
+     * landmarks either side of it.
+     *
+     * This is the whole trick. Landmarks arrive at 15-25fps against a 60Hz
+     * display, so most repaints have no new information — and closing a fraction
+     * of the remaining distance each time, which is the obvious way to fill the
+     * gap, makes the page lunge when a landmark lands and coast between them.
+     * That is smooth in position but ragged in speed, and speed is what the eye
+     * reads as jumpiness.
+     *
+     * Interpolating instead means a hand moving at a constant speed produces a
+     * page moving at a constant speed, exactly, whatever the tracker is doing.
+     */
+    /**
+     * Moves the render head on by one frame and says where it now is.
+     *
+     * The head trails real time by `delay()`, but it must not be *computed* from
+     * it every frame. That delay comes from a running average of the gap between
+     * landmarks, so it shifts by a few milliseconds whenever the tracker's
+     * cadence does — and subtracting a moving number from a steady clock drags
+     * the whole path back and forth underneath the head. Measured on an
+     * otherwise perfectly even scroll, that alone turned steady 7.8px steps into
+     * a stream swinging between 6.2 and 12.3.
+     *
+     * So the head keeps its own clock, advanced by exactly the time the frame
+     * took, and is only nudged toward where it ideally belongs by a few percent
+     * of a frame at a time.
+     */
+    advanceHead(now, elapsed) {
+      const ideal = now - this.delay();
+      if (!this.head) {
+        this.head = ideal;
+        return this.head;
+      }
+      this.head += elapsed;
+      const limit = elapsed * HEAD_DRIFT;
+      const drift = ideal - this.head;
+      this.head += Math.max(-limit, Math.min(limit, drift));
+      return this.head;
+    }
+    positionAt(t) {
+      const path = this.path;
+      if (path.length === 0) return { x: this.appliedX, y: this.appliedY };
+      const first = path[0];
+      if (t <= first.t) return { x: first.x, y: first.y };
+      const last = path.at(-1);
+      if (t >= last.t) {
+        const previous = path.at(-2);
+        const span2 = previous ? last.t - previous.t : 0;
+        if (!this.live || !previous || span2 <= 0) return { x: last.x, y: last.y };
+        const over = Math.min(t - last.t, this.options.drag.resampleMax) / span2;
+        return {
+          x: last.x + (last.x - previous.x) * over,
+          y: last.y + (last.y - previous.y) * over
+        };
+      }
+      let i = path.length - 1;
+      while (i > 0 && path[i - 1].t > t) i -= 1;
+      const a = path[i - 1];
+      const b = path[i];
+      const span = b.t - a.t;
+      const f = span > 0 ? (t - a.t) / span : 1;
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
     }
     /**
      * The `native` strategy: hand the whole remaining distance to the browser as
@@ -1018,15 +1155,15 @@ var HandCursor = (() => {
       if (!force && now - this.lastRetargetAt < retargetMs) return true;
       this.lastRetargetAt = now;
       const { node, canX, canY } = this.target;
-      const top = Math.round(node.scrollTop - (canY ? this.pendingY : 0));
-      const left = Math.round(node.scrollLeft - (canX ? this.pendingX : 0));
+      const top = snap(node.scrollTop - (canY ? this.remainingY : 0));
+      const left = snap(node.scrollLeft - (canX ? this.remainingX : 0));
       try {
         node.scrollTo({ top, left, behavior });
       } catch {
         return false;
       }
-      this.pendingX = 0;
-      this.pendingY = 0;
+      this.appliedX = this.askedX;
+      this.appliedY = this.askedY;
       this.debug?.recordScroll(0);
       return true;
     }
@@ -1042,20 +1179,24 @@ var HandCursor = (() => {
       const vx = clamp2(velocityX);
       const vy = clamp2(velocityY);
       const slow = Math.hypot(vx, vy) < minVelocity;
+      this.live = false;
       if (mode === "native" || mode === "hybrid") {
         if (!slow) {
-          this.pendingX += throwDistance(vx, friction, flingScale);
-          this.pendingY += throwDistance(vy, friction, flingScale);
+          this.askedX += throwDistance(vx, friction, flingScale);
+          this.askedY += throwDistance(vy, friction, flingScale);
         }
         this.releaseBehavior();
-        if (this.retarget(true, "smooth")) return;
+        if (this.retarget(true, "smooth")) {
+          this.stop();
+          return;
+        }
       }
       if (slow) return;
       const tau = decayTau(friction);
-      this.velocityX = vx + this.pendingX / tau;
-      this.velocityY = vy + this.pendingY / tau;
-      this.pendingX = 0;
-      this.pendingY = 0;
+      this.velocityX = vx + this.remainingX / tau;
+      this.velocityY = vy + this.remainingY / tau;
+      this.appliedX = this.askedX;
+      this.appliedY = this.askedY;
       this.flinging = true;
       this.start();
     }
@@ -1070,8 +1211,7 @@ var HandCursor = (() => {
         this.frame = null;
       }
       this.flinging = false;
-      this.pendingX = 0;
-      this.pendingY = 0;
+      this.resetPath();
       this.velocityX = 0;
       this.velocityY = 0;
       this.releaseBehavior();
@@ -1079,7 +1219,8 @@ var HandCursor = (() => {
     tick(now) {
       this.frame = null;
       if (!this.target) return;
-      const dt = this.lastFrameAt ? Math.min((now - this.lastFrameAt) / 1e3, 1 / 20) : 1 / 60;
+      const elapsed = this.lastFrameAt ? Math.min(now - this.lastFrameAt, 50) : 1e3 / 60;
+      const dt = elapsed / 1e3;
       this.lastFrameAt = now;
       let dx = 0;
       let dy = 0;
@@ -1093,29 +1234,34 @@ var HandCursor = (() => {
         if (Math.hypot(this.velocityX, this.velocityY) < minVelocity) {
           this.flinging = false;
         }
+      } else if (this.options.drag.follow >= 1) {
+        dx = this.remainingX;
+        dy = this.remainingY;
+        this.appliedX = this.askedX;
+        this.appliedY = this.askedY;
       } else {
-        const follow = this.options.drag.follow;
-        const k = follow >= 1 ? 1 : 1 - (1 - follow) ** (dt * 60);
-        dx = this.pendingX * k;
-        dy = this.pendingY * k;
-        this.pendingX -= dx;
-        this.pendingY -= dy;
-        if (Math.abs(this.pendingX) < 0.01) this.pendingX = 0;
-        if (Math.abs(this.pendingY) < 0.01) this.pendingY = 0;
+        const at = this.positionAt(this.advanceHead(now, elapsed));
+        dx = at.x - this.appliedX;
+        dy = at.y - this.appliedY;
+        this.appliedX = at.x;
+        this.appliedY = at.y;
       }
       if (dx || dy) {
         applyScroll(this.target, dx, dy);
         this.debug?.recordScroll(dy || dx);
       }
-      const idle = !this.flinging && this.pendingX === 0 && this.pendingY === 0;
-      if (idle) {
+      const settled = Math.abs(this.remainingX) < 1e-3 && Math.abs(this.remainingY) < 1e-3;
+      if (!this.flinging && settled) {
         this.releaseBehavior();
         this.debug?.endTrace();
       } else this.frame = requestAnimationFrame(this.tick);
     }
     /** Distance the page still owes, so a release can fold it into the fling. */
-    get pending() {
-      return { x: this.pendingX, y: this.pendingY };
+    get remainingX() {
+      return this.askedX - this.appliedX;
+    }
+    get remainingY() {
+      return this.askedY - this.appliedY;
     }
   };
 
@@ -1245,7 +1391,7 @@ var HandCursor = (() => {
         this.dragging = true;
         this.leaveHovered(x, y);
       }
-      this.scroller.push(dx, dy);
+      this.scroller.push(dx, dy, now);
     }
     /**
      * How fast the hand was travelling as it let go, in CSS px per second.

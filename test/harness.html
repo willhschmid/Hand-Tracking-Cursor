@@ -89,7 +89,7 @@
         return points.map((p) => ({ x: p.x + dx, y: p.y + dy, z: 0 }));
       };
 
-      let clock = 1000;
+      let clock = performance.now();
       window.feed = (cx, cy, pinch, step = 16) => {
         clock += step;
         hc.consumeHand(window.makeHand(cx, cy, pinch), clock, VIDEO);
@@ -97,11 +97,53 @@
       };
 
       /**
+       * A landmark stamped with real time, which is what the controller really
+       * does — the timestamp is the animation frame the hand was seen in.
+       *
+       * Anything measuring scroll timing has to use this rather than the
+       * synthetic step above. The scroll runner reads the hand's path against
+       * this clock and renders it against requestAnimationFrame, so a test that
+       * advances a made-up clock faster than the wall is not describing
+       * anything that can happen.
+       */
+      window.feedNow = (cx, cy, pinch) => {
+        // Pinned to the wall, not merely nudged towards it: earlier tests drive
+        // the synthetic clock forward far faster than real time, and a path
+        // timestamped seconds into the future never comes into view at all.
+        clock = performance.now();
+        hc.consumeHand(window.makeHand(cx, cy, pinch), clock, VIDEO);
+        return { x: hc.position.x, y: hc.position.y, pinching: hc.pinching };
+      };
+
+      /**
+       * A plain pinch-drag, awaited, in real time.
+       *
+       * Real time is not optional here. The scroll runner reads the hand's path
+       * against the same clock it renders against, so a drag crammed into a
+       * couple of milliseconds of made-up time is not a drag it can serve — nor
+       * one any device could produce.
+       */
+      window.pinchDrag = async ({ x, y, dx = 0, dy = 0, steps = 12, fps = 30, release = true } = {}) => {
+        let cx = x;
+        let cy = y;
+        for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(cx, cy), false);
+        window.feedNow(...window.toCamera(cx, cy), true);
+        for (let i = 0; i < steps; i++) {
+          await new Promise((r) => setTimeout(r, 1000 / fps));
+          cx += dx / steps;
+          cy += dy / steps;
+          window.feedNow(...window.toCamera(cx, cy), true);
+        }
+        if (release) window.feedNow(...window.toCamera(cx, cy), false);
+        return { x: cx, y: cy };
+      };
+
+      /**
        * Drives a pinch-drag at `trackingFps` — the rate landmarks really arrive
        * — while sampling the scroll position every repaint. Jank lives in the
        * gap between those two rates, so this is what measures it.
        */
-      window.timedDrag = async ({ trackingFps = 20, seconds = 1.2 } = {}) => {
+      window.timedDrag = async ({ trackingFps = 20, seconds = 1.2, jitter = 0 } = {}) => {
         window.scrollTo(0, 0);
         window.lenis?.scrollTo(0, { immediate: true });
         await new Promise((r) => setTimeout(r, 200));
@@ -122,14 +164,31 @@
         const top = innerHeight * 0.15;
         let cy = bottom;
 
-        for (let i = 0; i < 30; i++) window.feed(...window.toCamera(cx, cy), false, stepMs);
-        window.feed(...window.toCamera(cx, cy), true, stepMs);
+        for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(cx, cy), false);
+        window.feedNow(...window.toCamera(cx, cy), true);
+        // `jitter` spreads the landmark arrivals out unevenly, which is what a
+        // phone really does — inference time varies frame to frame. Even
+        // spacing flatters any scheme that assumes a steady rate.
+        let seed = 12345;
+        const wobble = () => {
+          seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+          return 1 + ((seed / 0x7fffffff) * 2 - 1) * jitter;
+        };
+        // The hand travels at a genuinely constant speed, measured against the
+        // wall rather than against the requested delay — `setTimeout` is not
+        // accurate enough to stand in for one, and a hand that only moves at a
+        // constant speed on paper cannot tell us whether the page does.
+        const speed = (bottom - top) / seconds;
+        let previous = performance.now();
         for (let i = 0; i < steps; i++) {
-          cy -= (bottom - top) / steps;
-          window.feed(...window.toCamera(cx, cy), true, stepMs);
-          await new Promise((r) => setTimeout(r, stepMs));
+          await new Promise((r) => setTimeout(r, stepMs * wobble()));
+          const at = performance.now();
+          cy -= speed * ((at - previous) / 1000);
+          previous = at;
+          window.feedNow(...window.toCamera(cx, cy), true);
         }
-        window.feed(...window.toCamera(cx, cy), false, stepMs);
+        window.feedNow(...window.toCamera(cx, cy), false);
+        const releasedAt = samples.length;
         await new Promise((r) => setTimeout(r, 300));
         sampling = false;
 
@@ -138,11 +197,22 @@
         // Only judge frames from the moment the page actually starts moving.
         const first = deltas.findIndex((d) => Math.abs(d) > 0.5);
         const active = first === -1 ? [] : deltas.slice(first);
+        // Roughness during the drag itself, which is where jumpiness is felt.
+        // A hand moving at a steady speed should produce a steady stream of
+        // equal steps, so what matters is not how big a step is but how much it
+        // differs from the one before it. 0 is a perfectly even glide; 1 means
+        // consecutive repaints differ by as much as a whole step.
+        const held = first === -1 ? [] : deltas.slice(first, Math.max(releasedAt - 2, first));
+        const mean = held.reduce((a, b) => a + Math.abs(b), 0) / Math.max(held.length, 1);
+        let churn = 0;
+        for (let i = 1; i < held.length; i++) churn += Math.abs(held[i] - held[i - 1]);
         return {
           frames: active.length,
           stalled: active.filter((d) => Math.abs(d) <= 0.5).length,
           biggestJump: Math.max(0, ...active.map(Math.abs)),
           scrolled: samples.at(-1) - samples[0],
+          step: Number(mean.toFixed(2)),
+          roughness: Number((churn / Math.max(held.length - 1, 1) / (mean || 1)).toFixed(3)),
         };
       };
 
@@ -168,15 +238,15 @@
         const perStep = (speed * stepMs) / 1000;
         const steps = Math.floor((bottom - top) / perStep);
 
-        for (let i = 0; i < 30; i++) window.feed(...window.toCamera(cx, cy), false, stepMs);
-        window.feed(...window.toCamera(cx, cy), true, stepMs);
+        for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(cx, cy), false);
+        window.feedNow(...window.toCamera(cx, cy), true);
 
         // Drag until the page has clearly started, timing how long that takes.
         const startedAt = performance.now();
         let latency = null;
         for (let i = 0; i < steps; i++) {
           cy -= perStep;
-          window.feed(...window.toCamera(cx, cy), true, stepMs);
+          window.feedNow(...window.toCamera(cx, cy), true);
           await new Promise((r) => setTimeout(r, stepMs));
           if (latency === null && window.scrollY > 20) latency = performance.now() - startedAt;
         }
@@ -184,12 +254,12 @@
         // `holdFrames` parks the hand still before letting go — the gesture
         // that has to stop the page dead rather than throw it.
         for (let i = 0; i < holdFrames; i++) {
-          window.feed(...window.toCamera(cx, cy), true, stepMs);
+          window.feedNow(...window.toCamera(cx, cy), true);
           await new Promise((r) => setTimeout(r, stepMs));
         }
 
         const atRelease = window.scrollY;
-        window.feed(...window.toCamera(cx, cy), false, stepMs);
+        window.feedNow(...window.toCamera(cx, cy), false);
         await new Promise((r) => setTimeout(r, 1800));
         return {
           steps,

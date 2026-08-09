@@ -192,7 +192,10 @@ HandCursor.init({
     mode: 'write',           // 'write' | 'native' | 'hybrid' — see Diagnosing jank
     retargetMs: 70,          // native mode: how often it re-aims at the hand
     flingScale: 1,           // multiplies how far a throw coasts
-    follow: 0.22,            // write mode: how fast the page catches the hand
+    follow: 0.22,            // set to 1 to turn the resampling below off
+    resample: 1.35,          // lag behind the hand, in landmark intervals
+    resampleMin: 24,         // ms
+    resampleMax: 90,         // ms
     velocityWindow: 120,     // ms of history a release reads its speed from
     friction: 0.967,         // fling decay, per 60fps frame, applied over real time
     minVelocity: 24,         // px/s — below this a fling stops
@@ -401,6 +404,40 @@ going. A pinch does not open instantly, so release is detected a frame or two
 after the fingers start parting; reading only the last frame would throw away
 most of a flick. Widen it if throws feel weaker than the gesture, narrow it if
 the page keeps coasting after you have visibly stopped.
+
+### If the scroll ripples
+
+A page that never stalls and never lurches can still read as jumpy, and the
+cause is speed rather than position. Landmarks arrive at 15-25fps against a 60Hz
+display, so most repaints have no new information. Filling those gaps by closing
+a fraction of the remaining distance each frame — the obvious way — makes every
+landmark land as a burst that decays over the repaints after it. The page is
+always moving, and always changing how fast.
+
+Instead the runner keeps the hand's path, timestamped, and draws it from a point
+`resample` intervals in the past, reading between the two landmarks either side.
+A hand at a constant speed then produces a page at a constant speed, exactly.
+Measured as how much one repaint's step differs from the one before it, a 15fps
+tracker with 35% jitter went from 38% to 1%, which is the same figure a 60fps
+tracker scores.
+
+Two details matter more than they look:
+
+- The path is timestamped with **when the hand was seen**, not when the scroll
+  code ran. Between those sits a MediaPipe inference, tens of milliseconds and a
+  different number of them every frame. Timing by arrival stamps that variation
+  onto a distance measured without it, and reports a hand moving at a constant
+  speed as one lurching between speeds.
+- The point being drawn runs on **its own clock**, advanced by each frame's own
+  elapsed time and nudged toward the ideal offset by at most 5% of a frame.
+  Recomputing it as `now - delay` every frame sounds equivalent, but `delay`
+  moves with a running average of the landmark gap, and subtracting a moving
+  number from a steady clock drags the whole path back and forth underneath the
+  render point. On an otherwise perfect scroll that alone turned steady 7.8px
+  steps into a stream swinging between 6.2 and 12.3.
+
+`handcursor-debug` in the URL shows the per-repaint `scroll` trace these numbers
+come from.
 
 `target` names the element being scrolled. It reads `page` for the document, or
 the element's tag and id. If it says `SMOOTH` in yellow, that element's CSS asks

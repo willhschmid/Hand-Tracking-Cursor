@@ -274,15 +274,11 @@ const elementScroll = await page.evaluate(async () => {
   const box = document.getElementById('box');
   box.scrollTop = 0;
   const rect = box.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
-  let cy = rect.top + rect.height / 2;
-  for (let i = 0; i < 40; i++) window.feed(...window.toCamera(cx, cy), false);
-  window.feed(...window.toCamera(cx, cy), true);
-  for (let i = 0; i < 60; i++) {
-    cy -= 3;
-    window.feed(...window.toCamera(cx, cy), true);
-  }
-  window.feed(...window.toCamera(cx, cy), false);
+  await window.pinchDrag({
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+    dy: -180,
+  });
   await new Promise((resolve) => setTimeout(resolve, 600));
   return { scrolled: box.scrollTop, page: window.scrollY };
 });
@@ -295,19 +291,12 @@ check('the page stays put while an element scrolls', elementScroll.page === 0);
 
 const pageScroll = await page.evaluate(async () => {
   window.scrollTo(0, 0);
-  const cx = 850;
-  let cy = 400;
-  for (let i = 0; i < 40; i++) window.feed(...window.toCamera(cx, cy), false);
-  window.feed(...window.toCamera(cx, cy), true);
-  for (let i = 0; i < 50; i++) {
-    cy -= 4;
-    window.feed(...window.toCamera(cx, cy), true);
-  }
+  const at = await window.pinchDrag({ x: 850, y: 400, dy: -200, release: false });
   // Sampled a beat after the drag, once the runner has caught up, then again
   // after the fling has played out.
   await new Promise((resolve) => setTimeout(resolve, 250));
   const during = window.scrollY;
-  window.feed(...window.toCamera(cx, cy), false);
+  window.feedNow(...window.toCamera(at.x, at.y), false);
   await new Promise((resolve) => setTimeout(resolve, 700));
   return { during, after: window.scrollY };
 });
@@ -504,6 +493,11 @@ for (const lenis of [false, true]) {
   const lenisOn = await smooth.evaluate(() => window.lenisReady);
   const slow = await smooth.evaluate(() => window.timedDrag({ trackingFps: 15 }));
   const fast = await smooth.evaluate(() => window.timedDrag({ trackingFps: 60 }));
+  // A phone does not deliver landmarks on a metronome — inference takes a
+  // different length of time every frame — so the uneven case is the real one.
+  const uneven = await smooth.evaluate(() =>
+    window.timedDrag({ trackingFps: 18, jitter: 0.35 }),
+  );
   await smooth.close();
 
   const label = lenis ? 'with Lenis' : 'on a plain page';
@@ -531,6 +525,21 @@ for (const lenis of [false, true]) {
     `${label}: slow tracking is nearly as smooth as fast`,
     slow.stalled / slow.frames < fast.stalled / fast.frames + 0.15,
     `slow ${slow.stalled}/${slow.frames} vs fast ${fast.stalled}/${fast.frames}`,
+  );
+  // The complaint this measures is "jumpy" on a page that never stalls and
+  // never lurches: a permanent ripple, because each landmark arrival used to
+  // produce a burst that decayed over the repaints after it. Steps that differ
+  // from their neighbour by a tenth are already imperceptible; it read 0.38
+  // before the runner started interpolating the hand's path.
+  check(
+    `${label}: a steady hand produces steady steps`,
+    uneven.roughness < 0.1,
+    `consecutive repaints differ by ${(uneven.roughness * 100).toFixed(0)}% of a step — ${JSON.stringify(uneven)}`,
+  );
+  check(
+    `${label}: an uneven tracker is no rougher than a display-rate one`,
+    uneven.roughness < fast.roughness + 0.06,
+    `uneven ${uneven.roughness} vs 60fps ${fast.roughness}`,
   );
   check(`${label}: no errors during the drag`, errors.length === 0, errors.join(' | '));
 }
