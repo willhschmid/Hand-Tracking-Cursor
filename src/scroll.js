@@ -39,13 +39,46 @@ export function scrollTargetFor(el) {
   };
 }
 
+/**
+ * Suppresses CSS `scroll-behavior: smooth` on the element we are about to drive.
+ *
+ * This is the difference between scrolling and lurching. A page with
+ * `scroll-behavior: smooth` set in its stylesheet turns *every* programmatic
+ * scroll into an animation. Driving one of those sixty times a second means
+ * sixty animations, each interrupting the one before it, and the page skips
+ * instead of moving.
+ *
+ * Passing `behavior: 'instant'` is supposed to opt out, but support is uneven —
+ * Safari in particular — and the `scrollTop` fallback below honours the CSS
+ * unconditionally. An inline style outranks the stylesheet everywhere, so this
+ * works regardless. It is put back when the gesture ends, leaving the page's own
+ * smooth anchor scrolling alone.
+ */
+function suppressSmoothScroll(node) {
+  const target = node === document.scrollingElement ? document.documentElement : node;
+  const previous = target.style.scrollBehavior;
+  target.style.setProperty('scroll-behavior', 'auto', 'important');
+  return () => {
+    // Priority passed explicitly, so the `important` flag set above is cleared
+    // rather than inherited by the restored value.
+    if (previous) target.style.setProperty('scroll-behavior', previous, '');
+    else target.style.removeProperty('scroll-behavior');
+  };
+}
+
+/** True when the page asked for smooth scrolling, for the diagnostics panel. */
+export function usesSmoothScroll(node) {
+  const target = node === document.scrollingElement ? document.documentElement : node;
+  return getComputedStyle(target).scrollBehavior === 'smooth';
+}
+
 /** Moves a scroll container by a delta expressed as cursor movement. */
 function applyScroll({ node, canX, canY }, dx, dy) {
-  const top = node.scrollTop - (canY ? dy : 0);
-  const left = node.scrollLeft - (canX ? dx : 0);
+  // Rounded to whole pixels: iOS snaps scroll offsets to the device grid, and
+  // feeding it a continuously varying fraction makes that snapping visible.
+  const top = Math.round(node.scrollTop - (canY ? dy : 0));
+  const left = Math.round(node.scrollLeft - (canX ? dx : 0));
   try {
-    // `instant` matters: a page with `scroll-behavior: smooth` would otherwise
-    // animate every one of these and lag badly behind the hand.
     node.scrollTo({ top, left, behavior: 'instant' });
   } catch {
     node.scrollTop = top;
@@ -68,6 +101,7 @@ export class ScrollRunner {
     this.flinging = false;
     this.frame = null;
     this.lastFrameAt = 0;
+    this.restoreBehavior = null;
     this.tick = this.tick.bind(this);
   }
 
@@ -75,8 +109,18 @@ export class ScrollRunner {
     if (target !== this.target) {
       this.pendingX = 0;
       this.pendingY = 0;
+      this.releaseBehavior();
     }
     this.target = target;
+    if (target && !this.restoreBehavior) {
+      this.restoreBehavior = suppressSmoothScroll(target.node);
+      this.debug?.recordTarget(target.node, usesSmoothScroll(target.node));
+    }
+  }
+
+  releaseBehavior() {
+    this.restoreBehavior?.();
+    this.restoreBehavior = null;
   }
 
   /** The hand moved. Adds to what the page still owes. */
@@ -117,6 +161,7 @@ export class ScrollRunner {
     this.pendingY = 0;
     this.velocityX = 0;
     this.velocityY = 0;
+    this.releaseBehavior();
   }
 
   tick(now) {
@@ -163,7 +208,8 @@ export class ScrollRunner {
 
     const idle =
       !this.flinging && this.pendingX === 0 && this.pendingY === 0;
-    if (!idle) this.frame = requestAnimationFrame(this.tick);
+    if (idle) this.releaseBehavior();
+    else this.frame = requestAnimationFrame(this.tick);
   }
 
   /** Distance the page still owes, so a release can fold it into the fling. */

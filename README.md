@@ -74,6 +74,14 @@ worker-src  'self' blob:;
 
 Host the assets yourself (see below) and those all collapse back to `'self'`.
 
+**`scroll-behavior: smooth`.** Handled, and worth knowing about. That CSS rule
+turns *every* programmatic scroll into an animation, so driving one sixty times
+a second means sixty animations each interrupting the last, and the page barely
+moves. `behavior: 'instant'` is meant to opt out but is not honoured everywhere
+— notably on iOS, where every browser is WebKit underneath. The scroll runner
+therefore forces `scroll-behavior: auto` with an inline style while it drives,
+and puts your value back when the gesture ends, so anchor links keep animating.
+
 **Smooth-scroll libraries.** Lenis, Locomotive and friends are fine. In their
 default native-scroll mode they observe the scroll position rather than owning
 it, so they simply follow along; the test suite runs its scroll checks against
@@ -315,6 +323,7 @@ which matters on a phone — and a panel appears in the top left:
 | `worst` | longest gap between repaints |
 | `blocked` | share of repaints later than 32ms — turns yellow above 20% |
 | `scroll` | scroll writes per second, and the mean step |
+| `target` | what is being scrolled, and whether its CSS asked for smooth |
 
 Read it while dragging:
 
@@ -327,6 +336,11 @@ Read it while dragging:
   little less responsive and everything else gets smoother.
 - **`scroll` far below `paint`** — the scroll runner is being starved
   specifically. Worth reporting.
+
+`target` names the element being scrolled. It reads `page` for the document, or
+the element's tag and id. If it says `SMOOTH` in yellow, that element's CSS asks
+for smooth scrolling; the runner suppresses it while dragging, but it is useful
+confirmation of what you are looking at.
 
 ---
 

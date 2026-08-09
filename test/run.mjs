@@ -535,6 +535,60 @@ for (const lenis of [false, true]) {
   check(`${label}: no errors during the drag`, errors.length === 0, errors.join(' | '));
 }
 
+// ------------------------------------------------ CSS scroll-behavior ------
+//
+// A page with `scroll-behavior: smooth` turns every programmatic scroll into an
+// animation. Driven sixty times a second, each write interrupts the last and
+// the page barely moves. `behavior: 'instant'` is meant to opt out, but support
+// is uneven, so the runner forces the behaviour off with an inline style while
+// it drives. This checks that in a browser that rejects `instant` — which is
+// the situation that made a real device lurch while Chromium looked fine.
+
+{
+  const smooth = await browser.newPage({ viewport: { width: 420, height: 800 } });
+  await smooth.addInitScript(() => {
+    const real = Element.prototype.scrollTo;
+    Element.prototype.scrollTo = function (options) {
+      if (options && typeof options === 'object' && options.behavior === 'instant') {
+        throw new TypeError('behavior:instant not supported');
+      }
+      return real.apply(this, arguments);
+    };
+  });
+  await smooth.goto(`http://localhost:${PORT}/test/harness.html?smooth=1`, {
+    waitUntil: 'load',
+  });
+
+  const declared = await smooth.evaluate(
+    () => document.documentElement.style.scrollBehavior,
+  );
+  const result = await smooth.evaluate(() => window.timedDrag({ trackingFps: 30 }));
+  // The override is lifted when the runner goes idle, which is after the
+  // release fling has played out, not when the drag ends.
+  await smooth.waitForTimeout(1500);
+  const afterwards = await smooth.evaluate(
+    () => getComputedStyle(document.documentElement).scrollBehavior,
+  );
+  await smooth.close();
+
+  check('the fixture really does ask for smooth scrolling', declared === 'smooth', declared);
+  check(
+    'a smooth-scroll page still scrolls when instant is unsupported',
+    result.scrolled > 200,
+    `only moved ${Math.round(result.scrolled)}px — ${JSON.stringify(result)}`,
+  );
+  check(
+    'a smooth-scroll page does not lurch',
+    result.stalled / Math.max(result.frames, 1) < 0.25 && result.biggestJump < 20,
+    JSON.stringify(result),
+  );
+  check(
+    "the page's own smooth scrolling is restored afterwards",
+    afterwards === 'smooth',
+    `left as ${afterwards}`,
+  );
+}
+
 check('no uncaught page errors', pageErrors.length === 0, pageErrors.join(' | '));
 
 // ------------------------------------------------------------------ report --

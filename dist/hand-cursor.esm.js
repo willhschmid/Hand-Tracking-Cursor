@@ -833,9 +833,22 @@ function scrollTargetFor(el) {
     canY: doc.scrollHeight - doc.clientHeight > 1
   };
 }
+function suppressSmoothScroll(node) {
+  const target = node === document.scrollingElement ? document.documentElement : node;
+  const previous = target.style.scrollBehavior;
+  target.style.setProperty("scroll-behavior", "auto", "important");
+  return () => {
+    if (previous) target.style.setProperty("scroll-behavior", previous, "");
+    else target.style.removeProperty("scroll-behavior");
+  };
+}
+function usesSmoothScroll(node) {
+  const target = node === document.scrollingElement ? document.documentElement : node;
+  return getComputedStyle(target).scrollBehavior === "smooth";
+}
 function applyScroll({ node, canX, canY }, dx, dy) {
-  const top = node.scrollTop - (canY ? dy : 0);
-  const left = node.scrollLeft - (canX ? dx : 0);
+  const top = Math.round(node.scrollTop - (canY ? dy : 0));
+  const left = Math.round(node.scrollLeft - (canX ? dx : 0));
   try {
     node.scrollTo({ top, left, behavior: "instant" });
   } catch {
@@ -855,14 +868,24 @@ var ScrollRunner = class {
     this.flinging = false;
     this.frame = null;
     this.lastFrameAt = 0;
+    this.restoreBehavior = null;
     this.tick = this.tick.bind(this);
   }
   setTarget(target) {
     if (target !== this.target) {
       this.pendingX = 0;
       this.pendingY = 0;
+      this.releaseBehavior();
     }
     this.target = target;
+    if (target && !this.restoreBehavior) {
+      this.restoreBehavior = suppressSmoothScroll(target.node);
+      this.debug?.recordTarget(target.node, usesSmoothScroll(target.node));
+    }
+  }
+  releaseBehavior() {
+    this.restoreBehavior?.();
+    this.restoreBehavior = null;
   }
   /** The hand moved. Adds to what the page still owes. */
   push(dx, dy) {
@@ -897,6 +920,7 @@ var ScrollRunner = class {
     this.pendingY = 0;
     this.velocityX = 0;
     this.velocityY = 0;
+    this.releaseBehavior();
   }
   tick(now) {
     this.frame = null;
@@ -930,7 +954,8 @@ var ScrollRunner = class {
       this.debug?.recordScroll(dy || dx);
     }
     const idle = !this.flinging && this.pendingX === 0 && this.pendingY === 0;
-    if (!idle) this.frame = requestAnimationFrame(this.tick);
+    if (idle) this.releaseBehavior();
+    else this.frame = requestAnimationFrame(this.tick);
   }
   /** Distance the page still owes, so a release can fold it into the fling. */
   get pending() {
@@ -1417,7 +1442,8 @@ var ROWS = [
   ["frame", "milliseconds between repaints, median / 95th"],
   ["worst", "longest gap between repaints"],
   ["blocked", "share of repaints later than 32ms"],
-  ["scroll", "scroll writes per second, and mean step"]
+  ["scroll", "scroll writes per second, and mean step"],
+  ["target", "what is being scrolled, and whether its CSS asked for smooth"]
 ];
 var DebugOverlay = class {
   constructor() {
@@ -1431,6 +1457,8 @@ var DebugOverlay = class {
     this.lastPaintAt = 0;
     this.lastReportAt = 0;
     this.running = false;
+    this.targetLabel = "";
+    this.targetSmooth = false;
     this.el = document.createElement("div");
     this.el.className = "hc-debug";
     this.el.innerHTML = ROWS.map(
@@ -1464,6 +1492,16 @@ var DebugOverlay = class {
   recordScroll(step) {
     this.scrollCount += 1;
     this.scrollSteps.push(Math.abs(step));
+  }
+  /**
+   * Which element is being scrolled, and whether its stylesheet asked for
+   * smooth scrolling — the single most likely reason a page lurches while
+   * everything else on it stays smooth.
+   */
+  recordTarget(node, smooth) {
+    const name = node === document.scrollingElement || node === document.documentElement ? "page" : node.tagName.toLowerCase() + (node.id ? `#${node.id}` : "");
+    this.targetLabel = `${name} ${smooth ? "SMOOTH" : "auto"}`;
+    this.targetSmooth = smooth;
   }
   /**
    * Runs its own animation frame loop rather than piggy-backing on the tracker,
@@ -1500,6 +1538,7 @@ var DebugOverlay = class {
       "scroll",
       this.scrollCount ? `${perSecond(this.scrollCount)}/s ${this.scrollSteps.mean.toFixed(1)}px` : "\u2014"
     );
+    this.set("target", this.targetLabel || "\u2014", Boolean(this.targetSmooth));
     this.paintCount = 0;
     this.trackCount = 0;
     this.scrollCount = 0;

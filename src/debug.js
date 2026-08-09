@@ -52,6 +52,7 @@ const ROWS = [
   ['worst', 'longest gap between repaints'],
   ['blocked', 'share of repaints later than 32ms'],
   ['scroll', 'scroll writes per second, and mean step'],
+  ['target', 'what is being scrolled, and whether its CSS asked for smooth'],
 ];
 
 export class DebugOverlay {
@@ -67,6 +68,8 @@ export class DebugOverlay {
     this.lastPaintAt = 0;
     this.lastReportAt = 0;
     this.running = false;
+    this.targetLabel = '';
+    this.targetSmooth = false;
 
     this.el = document.createElement('div');
     this.el.className = 'hc-debug';
@@ -112,6 +115,20 @@ export class DebugOverlay {
   }
 
   /**
+   * Which element is being scrolled, and whether its stylesheet asked for
+   * smooth scrolling — the single most likely reason a page lurches while
+   * everything else on it stays smooth.
+   */
+  recordTarget(node, smooth) {
+    const name =
+      node === document.scrollingElement || node === document.documentElement
+        ? 'page'
+        : node.tagName.toLowerCase() + (node.id ? `#${node.id}` : '');
+    this.targetLabel = `${name} ${smooth ? 'SMOOTH' : 'auto'}`;
+    this.targetSmooth = smooth;
+  }
+
+  /**
    * Runs its own animation frame loop rather than piggy-backing on the tracker,
    * so it measures what the browser manages rather than what we ask for.
    */
@@ -154,6 +171,7 @@ export class DebugOverlay {
         ? `${perSecond(this.scrollCount)}/s ${this.scrollSteps.mean.toFixed(1)}px`
         : '—',
     );
+    this.set('target', this.targetLabel || '—', Boolean(this.targetSmooth));
 
     this.paintCount = 0;
     this.trackCount = 0;
