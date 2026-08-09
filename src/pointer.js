@@ -76,7 +76,7 @@ export class TouchEmulator {
     this.dragging = false;
     this.origin = null;
     this.last = null;
-    this.velocity = { x: 0, y: 0 };
+    this.samples = [];
     this.scrollTarget = null;
     this.scroller = new ScrollRunner(options, debug);
   }
@@ -139,7 +139,7 @@ export class TouchEmulator {
     this.dragging = false;
     this.origin = { x, y, t: now, el, internal };
     this.last = { x, y, t: now };
-    this.velocity = { x: 0, y: 0 };
+    this.samples = [{ x, y, t: now }];
     this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
     this.scroller.setTarget(this.scrollTarget);
   }
@@ -150,23 +150,24 @@ export class TouchEmulator {
 
     const dx = x - this.last.x;
     const dy = y - this.last.y;
-    // Landmark frames are not evenly spaced, so velocity is measured against
-    // real elapsed time rather than counted per frame. Otherwise a fling thrown
-    // at 20fps would travel three times as far as the same gesture at 60fps.
-    const dt = Math.max(now - this.last.t, 1) / SECOND;
     this.last = { x, y, t: now };
-
-    // Exponential average keeps the fling velocity stable across jittery frames.
-    this.velocity.x = this.velocity.x * 0.7 + (dx / dt) * 0.3;
-    this.velocity.y = this.velocity.y * 0.7 + (dy / dt) * 0.3;
+    this.samples.push({ x, y, t: now });
+    // Two windows' worth is plenty of history; the rest is only ever discarded.
+    const keep = this.options.drag.velocityWindow * 2;
+    while (this.samples.length > 2 && now - this.samples[0].t > keep) this.samples.shift();
 
     if (!this.dragging) {
-      const { threshold, holdDelay } = this.options.drag;
+      const { threshold, holdDelay, holdEscape } = this.options.drag;
+      const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
       // Closing the pinch moves the hand, so the first moments of every press
       // carry drift that has nothing to do with intent. Waiting that out is
       // what lets a deliberate tap stay a tap.
-      if (now - this.origin.t < holdDelay) return;
-      const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
+      //
+      // A flick does not need waiting out, though: pinch drift is small and
+      // slow, so travelling `holdEscape` this early is already unambiguous.
+      // Making a fast gesture sit through the delay is what reads as the page
+      // starting late.
+      if (travel < holdEscape && now - this.origin.t < holdDelay) return;
       if (travel < threshold) return;
 
       this.dragging = true;
@@ -182,6 +183,32 @@ export class TouchEmulator {
     this.scroller.push(dx, dy);
   }
 
+  /**
+   * How fast the hand was travelling as it let go, in CSS px per second.
+   *
+   * Measured across a window rather than from the last pair of frames. A pinch
+   * does not open instantly, so release is detected a frame or two after the
+   * fingers start parting, and by then the hand is often slowing down or
+   * already still. Reading the instantaneous speed at that moment throws away
+   * most of the gesture: you push, and the page barely coasts.
+   *
+   * A window that has genuinely stopped moving still reports zero, so drag,
+   * hold, release stops the page dead — which is what holding means.
+   */
+  releaseVelocity() {
+    const last = this.samples.at(-1);
+    if (!last) return { x: 0, y: 0 };
+    const cutoff = last.t - this.options.drag.velocityWindow;
+    // The sample straddling the cutoff is kept, so a slow tracker whose frames
+    // are wider than the window still has two points to measure between.
+    let i = this.samples.length - 1;
+    while (i > 0 && this.samples[i - 1].t >= cutoff) i -= 1;
+    const first = this.samples[Math.max(i - 1, 0)];
+    const dt = (last.t - first.t) / SECOND;
+    if (dt <= 0) return { x: 0, y: 0 };
+    return { x: (last.x - first.x) / dt, y: (last.y - first.y) / dt };
+  }
+
   /** Pinch released: either a tap or the end of a drag. */
   release(x, y, now) {
     if (!this.pressing) return;
@@ -191,13 +218,10 @@ export class TouchEmulator {
 
     if (this.dragging) {
       this.dragging = false;
-      // Fold in whatever the page has not caught up on yet, so the throw starts
-      // from where the hand actually was.
-      const pending = this.scroller.pending;
-      this.scroller.fling(
-        this.velocity.x + pending.x / SECOND,
-        this.velocity.y + pending.y / SECOND,
-      );
+      // Hand speed only. The runner folds in whatever distance the page has not
+      // caught up on yet, since it is the one that knows the decay rate.
+      const velocity = this.releaseVelocity();
+      this.scroller.fling(velocity.x, velocity.y);
       return;
     }
 

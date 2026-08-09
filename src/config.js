@@ -79,18 +79,31 @@ export const DEFAULTS = {
     threshold: 34,
     holdDelay: 140,
     /**
+     * Travel that skips `holdDelay` outright. Pinch drift is small and slow, so
+     * a hand that has already covered this much cannot be settling into a tap —
+     * and a flick that has to sit out the delay first is exactly what makes the
+     * page feel like it starts after the gesture instead of with it.
+     */
+    holdEscape: 70,
+    /**
      * How the scroll is actually applied.
      *
-     *   'write'  — set the scroll position every animation frame. Direct, and
-     *              what a trackpad feels like.
-     *   'native' — hand the distance to the browser as a smooth scroll and let
-     *              it animate. Slower to respond, but the animation runs where
-     *              the browser runs its own scrolling, which on iOS is a
-     *              different thread from JavaScript.
+     *   'write'  — set the scroll position every animation frame, throw
+     *              included. Direct, but the writes can stutter on iOS.
+     *   'native' — hand everything to the browser as smooth scrolls. Smooth,
+     *              but the page arrives after the hand rather than under it:
+     *              the wait is the retarget interval plus the browser's own
+     *              easing, and the easing is not ours to shorten.
+     *   'hybrid' — track the hand directly during the drag, then hand the
+     *              throw to the browser. Latency matters during a drag and
+     *              smoothness matters during a throw, and this is the
+     *              combination that gets both.
      */
     mode: 'write',
     /** How often `native` mode re-aims at the hand, in ms. */
-    retargetMs: 110,
+    retargetMs: 70,
+    /** Multiplies how far a throw coasts. 1 matches the frame-by-frame decay. */
+    flingScale: 1,
     /**
      * `write` mode only: how much of the remaining distance the page closes
      * each 60fps frame. Landmarks arrive slower than the screen repaints, so
@@ -99,8 +112,22 @@ export const DEFAULTS = {
      * 1 disables the smoothing.
      */
     follow: 0.22,
-    /** Fling decay, written per 60fps frame but applied over real time. */
-    friction: 0.94,
+    /**
+     * How far back a release looks to work out how fast the hand was going, in
+     * ms. Wide enough to survive the frame or two it takes for a pinch to read
+     * as open, narrow enough that stopping still means stopping.
+     */
+    velocityWindow: 120,
+    /**
+     * Fling decay, written per 60fps frame but applied over real time.
+     *
+     * A throw travels its release speed multiplied by the decay's time
+     * constant, which this works out to about half a second — near enough to
+     * UIScrollView's own deceleration that a flick carries as far as the
+     * touchscreen the gesture is imitating. Raise it towards 1 for a longer
+     * coast, lower it for a shorter one.
+     */
+    friction: 0.967,
     /** Fling limits, in CSS px per second. */
     minVelocity: 24,
     maxVelocity: 3600,

@@ -188,10 +188,13 @@ HandCursor.init({
   drag: {
     threshold: 34,           // px of travel before a scroll starts
     holdDelay: 140,          // ms the pinch must be held first
-    mode: 'write',           // 'write' | 'native' — see Diagnosing jank
-    retargetMs: 110,         // native mode: how often it re-aims at the hand
+    holdEscape: 70,          // px of travel that skips holdDelay outright
+    mode: 'write',           // 'write' | 'native' | 'hybrid' — see Diagnosing jank
+    retargetMs: 70,          // native mode: how often it re-aims at the hand
+    flingScale: 1,           // multiplies how far a throw coasts
     follow: 0.22,            // write mode: how fast the page catches the hand
-    friction: 0.94,          // fling decay, per 60fps frame, applied over real time
+    velocityWindow: 120,     // ms of history a release reads its speed from
+    friction: 0.967,         // fling decay, per 60fps frame, applied over real time
     minVelocity: 24,         // px/s — below this a fling stops
     maxVelocity: 3600,       // px/s
   },
@@ -368,7 +371,36 @@ This matters most on iOS, where the scroll position lives on a different thread
 from JavaScript and every write has to be synchronised across. A browser-run
 animation happens on that side of the boundary — the same reason the cursor,
 which is a composited transform, stays smooth when the page does not. The cost
-is latency: the page trails the hand by roughly `retargetMs`.
+is latency: the page trails the hand by `retargetMs` plus the browser's own
+easing, and that easing is not ours to shorten. Measured on a 1400px/s flick,
+the page had travelled 188px by the time the hand let go, against 395px in
+`write` mode — the page arrives after the hand rather than under it.
+
+`drag.mode: 'hybrid'` splits the difference: the hand is tracked directly during
+the drag, where latency is what you notice, and the throw is handed to the
+browser, where smoothness is. Use it if the jank only shows up during the throw.
+
+### Tuning the feel
+
+Three numbers decide whether a scroll feels immediate.
+
+`holdDelay` is the pause before a press can become a scroll, and it exists so a
+deliberate tap stays a tap. It is also the most likely reason a scroll feels
+like it starts after the gesture. `holdEscape` is the way out: travel that far
+and the delay is skipped, on the grounds that pinch drift is small and slow, so
+a hand already moving that fast cannot be settling into a tap. Lower it for a
+hair-trigger scroll, raise it if flicks are stealing taps.
+
+`friction` sets how far a throw carries. A throw travels its release speed times
+the decay's time constant, which is `-1 / (60 * ln(friction))` seconds — 0.5s at
+the default, so a hand leaving at 1400px/s coasts about 700px. `flingScale`
+multiplies that if you want the same decay curve over a different distance.
+
+`velocityWindow` is how far back a release looks to decide how fast the hand was
+going. A pinch does not open instantly, so release is detected a frame or two
+after the fingers start parting; reading only the last frame would throw away
+most of a flick. Widen it if throws feel weaker than the gesture, narrow it if
+the page keeps coasting after you have visibly stopped.
 
 `target` names the element being scrolled. It reads `page` for the document, or
 the element's tag and id. If it says `SMOOTH` in yellow, that element's CSS asks

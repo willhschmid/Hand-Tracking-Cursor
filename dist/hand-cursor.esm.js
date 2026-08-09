@@ -75,18 +75,31 @@ var DEFAULTS = {
     threshold: 34,
     holdDelay: 140,
     /**
+     * Travel that skips `holdDelay` outright. Pinch drift is small and slow, so
+     * a hand that has already covered this much cannot be settling into a tap —
+     * and a flick that has to sit out the delay first is exactly what makes the
+     * page feel like it starts after the gesture instead of with it.
+     */
+    holdEscape: 70,
+    /**
      * How the scroll is actually applied.
      *
-     *   'write'  — set the scroll position every animation frame. Direct, and
-     *              what a trackpad feels like.
-     *   'native' — hand the distance to the browser as a smooth scroll and let
-     *              it animate. Slower to respond, but the animation runs where
-     *              the browser runs its own scrolling, which on iOS is a
-     *              different thread from JavaScript.
+     *   'write'  — set the scroll position every animation frame, throw
+     *              included. Direct, but the writes can stutter on iOS.
+     *   'native' — hand everything to the browser as smooth scrolls. Smooth,
+     *              but the page arrives after the hand rather than under it:
+     *              the wait is the retarget interval plus the browser's own
+     *              easing, and the easing is not ours to shorten.
+     *   'hybrid' — track the hand directly during the drag, then hand the
+     *              throw to the browser. Latency matters during a drag and
+     *              smoothness matters during a throw, and this is the
+     *              combination that gets both.
      */
     mode: "write",
     /** How often `native` mode re-aims at the hand, in ms. */
-    retargetMs: 110,
+    retargetMs: 70,
+    /** Multiplies how far a throw coasts. 1 matches the frame-by-frame decay. */
+    flingScale: 1,
     /**
      * `write` mode only: how much of the remaining distance the page closes
      * each 60fps frame. Landmarks arrive slower than the screen repaints, so
@@ -95,8 +108,22 @@ var DEFAULTS = {
      * 1 disables the smoothing.
      */
     follow: 0.22,
-    /** Fling decay, written per 60fps frame but applied over real time. */
-    friction: 0.94,
+    /**
+     * How far back a release looks to work out how fast the hand was going, in
+     * ms. Wide enough to survive the frame or two it takes for a pinch to read
+     * as open, narrow enough that stopping still means stopping.
+     */
+    velocityWindow: 120,
+    /**
+     * Fling decay, written per 60fps frame but applied over real time.
+     *
+     * A throw travels its release speed multiplied by the decay's time
+     * constant, which this works out to about half a second — near enough to
+     * UIScrollView's own deceleration that a flick carries as far as the
+     * touchscreen the gesture is imitating. Raise it towards 1 for a longer
+     * coast, lower it for a shorter one.
+     */
+    friction: 0.967,
     /** Fling limits, in CSS px per second. */
     minVelocity: 24,
     maxVelocity: 3600
@@ -886,6 +913,12 @@ function applyScroll({ node, canX, canY }, dx, dy) {
     node.scrollLeft = left;
   }
 }
+function decayTau(friction) {
+  return -1 / (60 * Math.log(friction));
+}
+function throwDistance(velocity, friction, scale) {
+  return velocity * decayTau(friction) * scale;
+}
 var ScrollRunner = class {
   constructor(options, debug) {
     this.options = options;
@@ -913,15 +946,22 @@ var ScrollRunner = class {
     this.debug?.recordTarget(target.node, usesSmoothScroll(target.node));
     this.debug?.beginTrace(target.node);
     this.lastRetargetAt = 0;
-    if (this.options.drag.mode !== "native" && !this.restoreBehavior) {
-      this.restoreBehavior = suppressSmoothScroll(target.node);
+    if (this.options.drag.mode === "write" || this.options.drag.mode === "hybrid") {
+      if (!this.restoreBehavior) this.restoreBehavior = suppressSmoothScroll(target.node);
     }
   }
   releaseBehavior() {
     this.restoreBehavior?.();
     this.restoreBehavior = null;
   }
-  /** The hand moved. Adds to what the page still owes. */
+  /**
+   * The hand moved. Adds to what the page still owes.
+   *
+   * `native` hands the distance to the browser; `write` and `hybrid` both track
+   * the hand directly, frame by frame, because during a drag latency is far
+   * more noticeable than anything else — the page should sit under the hand,
+   * not arrive after it.
+   */
   push(dx, dy) {
     if (!this.target) return;
     this.flinging = false;
@@ -942,39 +982,50 @@ var ScrollRunner = class {
    * does not. The cost is latency: the page trails the hand by about the
    * retarget interval.
    */
-  retarget(force = false) {
+  retarget(force = false, behavior = "smooth") {
     const now = performance.now();
     const { retargetMs } = this.options.drag;
-    if (!force && now - this.lastRetargetAt < retargetMs) return;
+    if (!force && now - this.lastRetargetAt < retargetMs) return true;
     this.lastRetargetAt = now;
     const { node, canX, canY } = this.target;
     const top = Math.round(node.scrollTop - (canY ? this.pendingY : 0));
     const left = Math.round(node.scrollLeft - (canX ? this.pendingX : 0));
+    try {
+      node.scrollTo({ top, left, behavior });
+    } catch {
+      return false;
+    }
     this.pendingX = 0;
     this.pendingY = 0;
-    try {
-      node.scrollTo({ top, left, behavior: "smooth" });
-    } catch {
-      node.scrollTop = top;
-      node.scrollLeft = left;
-    }
     this.debug?.recordScroll(0);
+    return true;
   }
-  /** Pinch released while moving: carry on under momentum. */
+  /**
+   * Pinch released while moving: carry on under momentum.
+   *
+   * `velocity` is the hand's speed at the moment of release, in CSS px per
+   * second, so the throw is proportional to how hard the gesture was pushed.
+   */
   fling(velocityX, velocityY) {
-    const { minVelocity, maxVelocity, mode, friction } = this.options.drag;
-    if (mode === "native") {
-      const seconds = 1 / (60 * (1 - friction));
-      this.pendingX += velocityX * seconds * 0.5;
-      this.pendingY += velocityY * seconds * 0.5;
-      this.retarget(true);
-      this.releaseBehavior();
-      return;
-    }
+    const { minVelocity, maxVelocity, mode, friction, flingScale } = this.options.drag;
     const clamp2 = (v) => Math.max(-maxVelocity, Math.min(maxVelocity, v));
-    this.velocityX = clamp2(velocityX);
-    this.velocityY = clamp2(velocityY);
-    if (Math.hypot(this.velocityX, this.velocityY) < minVelocity) return;
+    const vx = clamp2(velocityX);
+    const vy = clamp2(velocityY);
+    const slow = Math.hypot(vx, vy) < minVelocity;
+    if (mode === "native" || mode === "hybrid") {
+      if (!slow) {
+        this.pendingX += throwDistance(vx, friction, flingScale);
+        this.pendingY += throwDistance(vy, friction, flingScale);
+      }
+      this.releaseBehavior();
+      if (this.retarget(true, "smooth")) return;
+    }
+    if (slow) return;
+    const tau = decayTau(friction);
+    this.velocityX = vx + this.pendingX / tau;
+    this.velocityY = vy + this.pendingY / tau;
+    this.pendingX = 0;
+    this.pendingY = 0;
     this.flinging = true;
     this.start();
   }
@@ -1087,7 +1138,7 @@ var TouchEmulator = class {
     this.dragging = false;
     this.origin = null;
     this.last = null;
-    this.velocity = { x: 0, y: 0 };
+    this.samples = [];
     this.scrollTarget = null;
     this.scroller = new ScrollRunner(options, debug);
   }
@@ -1143,7 +1194,7 @@ var TouchEmulator = class {
     this.dragging = false;
     this.origin = { x, y, t: now, el, internal };
     this.last = { x, y, t: now };
-    this.velocity = { x: 0, y: 0 };
+    this.samples = [{ x, y, t: now }];
     this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
     this.scroller.setTarget(this.scrollTarget);
   }
@@ -1152,19 +1203,42 @@ var TouchEmulator = class {
     if (!this.pressing) return;
     const dx = x - this.last.x;
     const dy = y - this.last.y;
-    const dt = Math.max(now - this.last.t, 1) / SECOND;
     this.last = { x, y, t: now };
-    this.velocity.x = this.velocity.x * 0.7 + dx / dt * 0.3;
-    this.velocity.y = this.velocity.y * 0.7 + dy / dt * 0.3;
+    this.samples.push({ x, y, t: now });
+    const keep = this.options.drag.velocityWindow * 2;
+    while (this.samples.length > 2 && now - this.samples[0].t > keep) this.samples.shift();
     if (!this.dragging) {
-      const { threshold, holdDelay } = this.options.drag;
-      if (now - this.origin.t < holdDelay) return;
+      const { threshold, holdDelay, holdEscape } = this.options.drag;
       const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
+      if (travel < holdEscape && now - this.origin.t < holdDelay) return;
       if (travel < threshold) return;
       this.dragging = true;
       this.leaveHovered(x, y);
     }
     this.scroller.push(dx, dy);
+  }
+  /**
+   * How fast the hand was travelling as it let go, in CSS px per second.
+   *
+   * Measured across a window rather than from the last pair of frames. A pinch
+   * does not open instantly, so release is detected a frame or two after the
+   * fingers start parting, and by then the hand is often slowing down or
+   * already still. Reading the instantaneous speed at that moment throws away
+   * most of the gesture: you push, and the page barely coasts.
+   *
+   * A window that has genuinely stopped moving still reports zero, so drag,
+   * hold, release stops the page dead — which is what holding means.
+   */
+  releaseVelocity() {
+    const last = this.samples.at(-1);
+    if (!last) return { x: 0, y: 0 };
+    const cutoff = last.t - this.options.drag.velocityWindow;
+    let i = this.samples.length - 1;
+    while (i > 0 && this.samples[i - 1].t >= cutoff) i -= 1;
+    const first = this.samples[Math.max(i - 1, 0)];
+    const dt = (last.t - first.t) / SECOND;
+    if (dt <= 0) return { x: 0, y: 0 };
+    return { x: (last.x - first.x) / dt, y: (last.y - first.y) / dt };
   }
   /** Pinch released: either a tap or the end of a drag. */
   release(x, y, now) {
@@ -1174,11 +1248,8 @@ var TouchEmulator = class {
     this.origin = null;
     if (this.dragging) {
       this.dragging = false;
-      const pending = this.scroller.pending;
-      this.scroller.fling(
-        this.velocity.x + pending.x / SECOND,
-        this.velocity.y + pending.y / SECOND
-      );
+      const velocity = this.releaseVelocity();
+      this.scroller.fling(velocity.x, velocity.y);
       return;
     }
     const travel = Math.hypot(x - origin.x, y - origin.y);

@@ -86,6 +86,26 @@ function applyScroll({ node, canX, canY }, dx, dy) {
   }
 }
 
+/**
+ * Time constant of the fling decay. `friction` is written as a per-60fps-frame
+ * figure because that is how it reads, so the equivalent continuous decay time
+ * falls out of it.
+ */
+function decayTau(friction) {
+  return -1 / (60 * Math.log(friction));
+}
+
+/**
+ * How far a throw should coast, from the speed it left the hand at.
+ *
+ * An exponential decay from v0 travels exactly v0 * tau in total, which is what
+ * keeps a browser-animated throw covering the same ground as one animated frame
+ * by frame.
+ */
+function throwDistance(velocity, friction, scale) {
+  return velocity * decayTau(friction) * scale;
+}
+
 export class ScrollRunner {
   constructor(options, debug) {
     this.options = options;
@@ -120,8 +140,8 @@ export class ScrollRunner {
     this.lastRetargetAt = 0;
     // `native` mode wants the browser's smooth scrolling, so it must not be
     // suppressed there.
-    if (this.options.drag.mode !== 'native' && !this.restoreBehavior) {
-      this.restoreBehavior = suppressSmoothScroll(target.node);
+    if (this.options.drag.mode === 'write' || this.options.drag.mode === 'hybrid') {
+      if (!this.restoreBehavior) this.restoreBehavior = suppressSmoothScroll(target.node);
     }
   }
 
@@ -130,7 +150,14 @@ export class ScrollRunner {
     this.restoreBehavior = null;
   }
 
-  /** The hand moved. Adds to what the page still owes. */
+  /**
+   * The hand moved. Adds to what the page still owes.
+   *
+   * `native` hands the distance to the browser; `write` and `hybrid` both track
+   * the hand directly, frame by frame, because during a drag latency is far
+   * more noticeable than anything else — the page should sit under the hand,
+   * not arrive after it.
+   */
   push(dx, dy) {
     if (!this.target) return;
     this.flinging = false;
@@ -152,45 +179,71 @@ export class ScrollRunner {
    * does not. The cost is latency: the page trails the hand by about the
    * retarget interval.
    */
-  retarget(force = false) {
+  retarget(force = false, behavior = 'smooth') {
     const now = performance.now();
     const { retargetMs } = this.options.drag;
-    if (!force && now - this.lastRetargetAt < retargetMs) return;
+    if (!force && now - this.lastRetargetAt < retargetMs) return true;
     this.lastRetargetAt = now;
 
     const { node, canX, canY } = this.target;
     const top = Math.round(node.scrollTop - (canY ? this.pendingY : 0));
     const left = Math.round(node.scrollLeft - (canX ? this.pendingX : 0));
+    try {
+      node.scrollTo({ top, left, behavior });
+    } catch {
+      // Reported so the caller can coast frame by frame instead. Writing the
+      // position here would teleport straight to the end of the throw.
+      return false;
+    }
     this.pendingX = 0;
     this.pendingY = 0;
-    try {
-      node.scrollTo({ top, left, behavior: 'smooth' });
-    } catch {
-      node.scrollTop = top;
-      node.scrollLeft = left;
-    }
     this.debug?.recordScroll(0);
+    return true;
   }
 
-  /** Pinch released while moving: carry on under momentum. */
+  /**
+   * Pinch released while moving: carry on under momentum.
+   *
+   * `velocity` is the hand's speed at the moment of release, in CSS px per
+   * second, so the throw is proportional to how hard the gesture was pushed.
+   */
   fling(velocityX, velocityY) {
-    const { minVelocity, maxVelocity, mode, friction } = this.options.drag;
-    if (mode === 'native') {
-      // One last throw, distance derived from the same decay the per-frame
-      // path uses, so the two modes coast about equally far.
-      const seconds = 1 / (60 * (1 - friction));
-      this.pendingX += velocityX * seconds * 0.5;
-      this.pendingY += velocityY * seconds * 0.5;
-      this.retarget(true);
-      this.releaseBehavior();
-      return;
-    }
+    const { minVelocity, maxVelocity, mode, friction, flingScale } = this.options.drag;
     const clamp = (v) => Math.max(-maxVelocity, Math.min(maxVelocity, v));
-    // Whatever the hand asked for and did not get yet is folded into the throw,
-    // so nothing is silently dropped at the moment of release.
-    this.velocityX = clamp(velocityX);
-    this.velocityY = clamp(velocityY);
-    if (Math.hypot(this.velocityX, this.velocityY) < minVelocity) return;
+    const vx = clamp(velocityX);
+    const vy = clamp(velocityY);
+    const slow = Math.hypot(vx, vy) < minVelocity;
+
+    // `native` and `hybrid` let the browser animate the throw. The browser runs
+    // that animation wherever it runs its own scrolling, which on iOS is not
+    // the thread this code is on — the same reason a composited transform stays
+    // smooth when per-frame writes do not.
+    if (mode === 'native' || mode === 'hybrid') {
+      if (!slow) {
+        this.pendingX += throwDistance(vx, friction, flingScale);
+        this.pendingY += throwDistance(vy, friction, flingScale);
+      }
+      // The behaviour override is for the direct writes during a drag; the
+      // throw wants the browser's animation, so lift it first.
+      this.releaseBehavior();
+      if (this.retarget(true, 'smooth')) return;
+      // The browser refused to animate. Coast it frame by frame rather than
+      // teleporting to the far end of the throw.
+    }
+
+    // Too gentle to throw. Leave whatever is pending alone so the runner can
+    // finish easing it in, rather than snapping the page to a stop.
+    if (slow) return;
+
+    // The frame loop ignores `pending` while it is flinging, so the distance the
+    // page had not caught up on yet has to be rolled into the throw or it is
+    // simply lost. Dividing by tau turns a distance back into the velocity that
+    // would cover it.
+    const tau = decayTau(friction);
+    this.velocityX = vx + this.pendingX / tau;
+    this.velocityY = vy + this.pendingY / tau;
+    this.pendingX = 0;
+    this.pendingY = 0;
     this.flinging = true;
     this.start();
   }

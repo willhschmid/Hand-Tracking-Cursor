@@ -589,38 +589,114 @@ for (const lenis of [false, true]) {
   );
 }
 
-// ------------------------------------------------------ native scroll mode --
+// ------------------------------------------- browser-animated scroll modes --
 //
 // The alternative strategy: hand the distance to the browser as a smooth
 // scroll rather than writing a position every frame. It exists because on iOS
 // the scroll position lives on a different thread from JavaScript, so a
 // browser-run animation can be smooth where per-frame writes are not.
+// `hybrid` uses it for the throw only, and tracks the hand directly during the
+// drag itself.
 
-{
-  const native = await browser.newPage({ viewport: { width: 420, height: 800 } });
+for (const mode of ['native', 'hybrid']) {
+  const page2 = await browser.newPage({ viewport: { width: 420, height: 800 } });
   const errors = [];
-  native.on('pageerror', (error) => errors.push(error.message));
-  await native.goto(`http://localhost:${PORT}/test/harness.html?mode=native`, {
+  page2.on('pageerror', (error) => errors.push(error.message));
+  await page2.goto(`http://localhost:${PORT}/test/harness.html?mode=${mode}`, {
     waitUntil: 'load',
   });
-  const configured = await native.evaluate(() => window.hc.options.drag.mode);
-  const result = await native.evaluate(() => window.timedDrag({ trackingFps: 15 }));
-  await native.waitForTimeout(600);
-  const settled = await native.evaluate(() => window.scrollY);
-  await native.close();
+  const configured = await page2.evaluate(() => window.hc.options.drag.mode);
+  const result = await page2.evaluate(() => window.timedDrag({ trackingFps: 15 }));
+  await page2.waitForTimeout(600);
+  const settled = await page2.evaluate(() => window.scrollY);
+  await page2.close();
 
-  check('native mode is what the fixture configured', configured === 'native', configured);
+  check(`${mode} mode is what the fixture configured`, configured === mode, configured);
   check(
-    'native mode scrolls the page',
+    `${mode} mode scrolls the page`,
     result.scrolled > 150,
     `moved ${Math.round(result.scrolled)}px — ${JSON.stringify(result)}`,
   );
   check(
-    'native mode keeps going after release',
+    `${mode} mode keeps going after release`,
     settled >= result.scrolled - 1,
     `during ${Math.round(result.scrolled)}, settled ${Math.round(settled)}`,
   );
-  check('native mode runs without errors', errors.length === 0, errors.join(' | '));
+  check(`${mode} mode runs without errors`, errors.length === 0, errors.join(' | '));
+}
+
+// ---------------------------------------------------------------- the feel --
+//
+// Two complaints, measured separately, because they have separate causes.
+//
+// "It waits too long, almost like I scroll and then the page scrolls" — the
+// hold delay that keeps a tap from becoming a scroll was also making a flick
+// sit still for 140ms before anything moved.
+//
+// "It's missing any velocity where I can push and then it scrolls according to
+// my speed" — the throw was not proportional to how fast the hand left. A
+// release at twice the speed has to coast about twice as far, in every mode.
+
+for (const mode of ['write', 'native', 'hybrid']) {
+  const feel = await browser.newPage({ viewport: { width: 420, height: 800 } });
+  await feel.goto(`http://localhost:${PORT}/test/harness.html?mode=${mode}`, {
+    waitUntil: 'load',
+  });
+  const slow = await feel.evaluate(() => window.feelTest({ speed: 700 }));
+  const fast = await feel.evaluate(() => window.feelTest({ speed: 1400 }));
+  const held = await feel.evaluate(() =>
+    window.feelTest({ speed: 1400, holdFrames: 8 }),
+  );
+  // Derived from the configured decay rather than hardcoded, so retuning the
+  // feel does not mean rewriting the expectation.
+  const ideal = await feel.evaluate(() => {
+    const { friction } = window.hc.options.drag;
+    return 1400 * (-1 / (60 * Math.log(friction)));
+  });
+  await feel.close();
+
+  check(
+    `${mode}: a flick starts the page moving promptly`,
+    fast.latencyMs >= 0 && fast.latencyMs < 140,
+    `took ${fast.latencyMs}ms — ${JSON.stringify(fast)}`,
+  );
+  check(
+    `${mode}: the throw carries the hand's speed`,
+    fast.coasted > slow.coasted * 1.6,
+    `700px/s threw ${slow.coasted}px, 1400px/s threw ${fast.coasted}px`,
+  );
+  check(
+    `${mode}: the throw is roughly the distance the decay implies`,
+    fast.coasted > ideal * 0.7 && fast.coasted < ideal * 1.4,
+    `expected ~${Math.round(ideal)}px, got ${fast.coasted}px`,
+  );
+  check(
+    `${mode}: stopping before letting go does not throw the page`,
+    Math.abs(held.coasted) < 30,
+    `coasted ${held.coasted}px after the hand had already stopped`,
+  );
+}
+
+// `write` and `hybrid` drive the drag itself, so the page should stay under the
+// hand rather than trailing it. This is the difference the user felt between
+// the two strategies, so it is worth pinning down rather than inferring.
+{
+  const feel = await browser.newPage({ viewport: { width: 420, height: 800 } });
+  await feel.goto(`http://localhost:${PORT}/test/harness.html?mode=hybrid`, {
+    waitUntil: 'load',
+  });
+  const hybrid = await feel.evaluate(() => window.feelTest({ speed: 1400 }));
+  await feel.goto(`http://localhost:${PORT}/test/harness.html?mode=native`, {
+    waitUntil: 'load',
+  });
+  const native = await feel.evaluate(() => window.feelTest({ speed: 1400 }));
+  await feel.close();
+
+  check(
+    'hybrid keeps the page under the hand better than native does',
+    hybrid.duringDrag > native.duringDrag * 1.3,
+    `hybrid ${hybrid.duringDrag}px vs native ${native.duringDrag}px by release`,
+  );
 }
 
 check('no uncaught page errors', pageErrors.length === 0, pageErrors.join(' | '));

@@ -146,6 +146,59 @@
         };
       };
 
+      /**
+       * Measures the two things a scroll has to get right, separately:
+       * how quickly the page starts moving once the hand does, and how far it
+       * coasts after release.
+       *
+       * The hand is released while still travelling at `speed`, which is what a
+       * flick actually is. Running it into the top of the viewport instead would
+       * park the cursor against the edge for the last few frames and hand the
+       * fling a velocity near zero — measuring the clamp, not the throw.
+       */
+      window.feelTest = async ({ speed = 1400, holdFrames = 0 } = {}) => {
+        window.scrollTo(0, 0);
+        await new Promise((r) => setTimeout(r, 250));
+
+        const cx = innerWidth - 60;
+        const bottom = innerHeight * 0.9;
+        const top = innerHeight * 0.1;
+        let cy = bottom;
+        const stepMs = 1000 / 30;
+        const perStep = (speed * stepMs) / 1000;
+        const steps = Math.floor((bottom - top) / perStep);
+
+        for (let i = 0; i < 30; i++) window.feed(...window.toCamera(cx, cy), false, stepMs);
+        window.feed(...window.toCamera(cx, cy), true, stepMs);
+
+        // Drag until the page has clearly started, timing how long that takes.
+        const startedAt = performance.now();
+        let latency = null;
+        for (let i = 0; i < steps; i++) {
+          cy -= perStep;
+          window.feed(...window.toCamera(cx, cy), true, stepMs);
+          await new Promise((r) => setTimeout(r, stepMs));
+          if (latency === null && window.scrollY > 20) latency = performance.now() - startedAt;
+        }
+
+        // `holdFrames` parks the hand still before letting go — the gesture
+        // that has to stop the page dead rather than throw it.
+        for (let i = 0; i < holdFrames; i++) {
+          window.feed(...window.toCamera(cx, cy), true, stepMs);
+          await new Promise((r) => setTimeout(r, stepMs));
+        }
+
+        const atRelease = window.scrollY;
+        window.feed(...window.toCamera(cx, cy), false, stepMs);
+        await new Promise((r) => setTimeout(r, 1800));
+        return {
+          steps,
+          latencyMs: latency === null ? -1 : Math.round(latency),
+          duringDrag: Math.round(atRelease),
+          coasted: Math.round(window.scrollY - atRelease),
+        };
+      };
+
       /** Viewport point -> camera coordinates, undoing mirror and dead zone. */
       window.toCamera = (x, y) => {
         const r = hc.options.region;
