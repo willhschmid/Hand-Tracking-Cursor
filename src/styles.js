@@ -277,6 +277,29 @@ export const CSS = `
 
 .hc-cursor[data-visible="true"] { opacity: 1; }
 
+/* ---------------------------------------------------------------- debug -- */
+
+.hc-debug {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  pointer-events: none;
+  min-width: 168px;
+  padding: 8px 10px;
+  border-radius: ${RADIUS.button}px;
+  background: rgba(0, 0, 0, 0.82);
+  color: ${COLOR.white};
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hc-debug-row { display: flex; justify-content: space-between; gap: 12px; }
+.hc-debug-row span { opacity: 0.55; }
+.hc-debug-row b { font-weight: 500; }
+.hc-debug-row b.is-warn { color: ${COLOR.yellow}; }
+
 /* ------------------------------------------------------------------ a11y -- */
 
 .hc-sr {

@@ -11,7 +11,11 @@ let current = null;
  */
 export function init(options = {}) {
   current?.destroy();
-  current = new HandCursorController(options);
+  // `handcursor-debug` anywhere in the URL turns the diagnostics on. There is no
+  // console to open on a phone, which is exactly where the numbers are needed.
+  const urlDebug =
+    typeof location !== 'undefined' && location.href.includes('handcursor-debug');
+  current = new HandCursorController(urlDebug ? { ...options, debug: true } : options);
   current.mount(options.container || document.body);
   return current;
 }

@@ -52,6 +52,20 @@ var HandCursor = (() => {
     zIndex: 2147483e3,
     /** Hands to track. Only the first one drives the cursor. */
     numHands: 1,
+    /**
+     * Show the on-screen diagnostics panel. Also enabled by putting
+     * `handcursor-debug` anywhere in the page URL, which is the only practical
+     * way to read these numbers on a phone.
+     */
+    debug: false,
+    /**
+     * Cap on how often the model runs, in frames per second. 0 leaves it at the
+     * camera's rate. Inference is synchronous on the main thread, so on a slow
+     * device it can starve requestAnimationFrame — and then nothing else can run
+     * smoothly either. Capping it trades tracking responsiveness for a main
+     * thread that has room to paint.
+     */
+    maxTrackingFps: 0,
     /** Camera constraints handed to getUserMedia. */
     camera: { width: 640, height: 480, frameRate: 30 },
     /**
@@ -474,6 +488,29 @@ var HandCursor = (() => {
 
 .hc-cursor[data-visible="true"] { opacity: 1; }
 
+/* ---------------------------------------------------------------- debug -- */
+
+.hc-debug {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  pointer-events: none;
+  min-width: 168px;
+  padding: 8px 10px;
+  border-radius: ${RADIUS.button}px;
+  background: rgba(0, 0, 0, 0.82);
+  color: ${COLOR.white};
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hc-debug-row { display: flex; justify-content: space-between; gap: 12px; }
+.hc-debug-row span { opacity: 0.55; }
+.hc-debug-row b { font-weight: 500; }
+.hc-debug-row b.is-warn { color: ${COLOR.yellow}; }
+
 /* ------------------------------------------------------------------ a11y -- */
 
 .hc-sr {
@@ -837,8 +874,9 @@ var HandCursor = (() => {
     }
   }
   var ScrollRunner = class {
-    constructor(options) {
+    constructor(options, debug) {
       this.options = options;
+      this.debug = debug;
       this.target = null;
       this.pendingX = 0;
       this.pendingY = 0;
@@ -917,7 +955,10 @@ var HandCursor = (() => {
         if (Math.abs(this.pendingX) < 0.01) this.pendingX = 0;
         if (Math.abs(this.pendingY) < 0.01) this.pendingY = 0;
       }
-      if (dx || dy) applyScroll(this.target, dx, dy);
+      if (dx || dy) {
+        applyScroll(this.target, dx, dy);
+        this.debug?.recordScroll(dy || dx);
+      }
       const idle = !this.flinging && this.pendingX === 0 && this.pendingY === 0;
       if (!idle) this.frame = requestAnimationFrame(this.tick);
     }
@@ -966,7 +1007,7 @@ var HandCursor = (() => {
      * @param {OwnUi} [hooks.ui]  the trackpad's own chrome
      * @param {Function} [hooks.onTap]
      */
-    constructor(options, { ui, onTap, hover } = {}) {
+    constructor(options, { ui, onTap, hover, debug } = {}) {
       this.options = options;
       this.ui = ui;
       this.onTap = onTap;
@@ -978,7 +1019,7 @@ var HandCursor = (() => {
       this.last = null;
       this.velocity = { x: 0, y: 0 };
       this.scrollTarget = null;
-      this.scroller = new ScrollRunner(options);
+      this.scroller = new ScrollRunner(options, debug);
     }
     /**
      * What is under the cursor, and whether that is the trackpad itself.
@@ -1270,13 +1311,15 @@ var HandCursor = (() => {
      * @param {import('./pointer.js').OwnUi} hooks.ui  the trackpad's own chrome
      * @param {Function} [hooks.onEvent]  (type, detail) for every gesture
      */
-    constructor(options, { ui, onEvent } = {}) {
+    constructor(options, { ui, onEvent, debug } = {}) {
       this.options = options;
       this.onEvent = onEvent;
+      this.debug = debug;
       this.cursor = new Cursor(options);
       this.hoverStyles = options.emulateHover ? new HoverEmulator() : null;
       this.touch = new TouchEmulator(options, {
         ui,
+        debug,
         hover: this.hoverStyles,
         onTap: (detail) => this.emit("tap", detail)
       });
@@ -1300,6 +1343,7 @@ var HandCursor = (() => {
      * @param {number} aspect   camera frame width / height
      */
     consume(landmarks, now, aspect = 1) {
+      this.debug?.recordTracked();
       const dt = this.lastFrameAt ? (now - this.lastFrameAt) / 1e3 : 1 / 60;
       this.lastFrameAt = now;
       const point = controlPoint(landmarks);
@@ -1370,6 +1414,137 @@ var HandCursor = (() => {
       this.touch.destroy();
       this.cursor.destroy();
       this.hoverStyles?.destroy();
+    }
+  };
+
+  // src/debug.js
+  var WINDOW = 60;
+  var Rolling = class {
+    constructor() {
+      this.values = [];
+    }
+    push(value) {
+      this.values.push(value);
+      if (this.values.length > WINDOW) this.values.shift();
+    }
+    get mean() {
+      if (!this.values.length) return 0;
+      return this.values.reduce((a, b) => a + b, 0) / this.values.length;
+    }
+    percentile(p) {
+      if (!this.values.length) return 0;
+      const sorted = [...this.values].sort((a, b) => a - b);
+      return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+    }
+    get max() {
+      return this.values.length ? Math.max(...this.values) : 0;
+    }
+  };
+  var ROWS = [
+    ["paint", "repaints per second \u2014 the rate the screen can actually update"],
+    ["track", "landmark frames per second"],
+    ["model", "milliseconds per inference, mean / worst"],
+    ["frame", "milliseconds between repaints, median / 95th"],
+    ["worst", "longest gap between repaints"],
+    ["blocked", "share of repaints later than 32ms"],
+    ["scroll", "scroll writes per second, and mean step"]
+  ];
+  var DebugOverlay = class {
+    constructor() {
+      this.inference = new Rolling();
+      this.frameGaps = new Rolling();
+      this.scrollSteps = new Rolling();
+      this.paintCount = 0;
+      this.trackCount = 0;
+      this.scrollCount = 0;
+      this.blockedCount = 0;
+      this.lastPaintAt = 0;
+      this.lastReportAt = 0;
+      this.running = false;
+      this.el = document.createElement("div");
+      this.el.className = "hc-debug";
+      this.el.innerHTML = ROWS.map(
+        ([key, title]) => `<div class="hc-debug-row" title="${title}"><span>${key}</span><b data-k="${key}">\u2014</b></div>`
+      ).join("");
+      this.tick = this.tick.bind(this);
+    }
+    mount(parent) {
+      parent.appendChild(this.el);
+      this.start();
+    }
+    start() {
+      if (this.running) return;
+      this.running = true;
+      this.lastPaintAt = 0;
+      this.lastReportAt = 0;
+      requestAnimationFrame(this.tick);
+    }
+    stop() {
+      this.running = false;
+    }
+    /** One inference, in milliseconds. */
+    recordInference(ms) {
+      this.inference.push(ms);
+    }
+    /** One frame of landmarks delivered. */
+    recordTracked() {
+      this.trackCount += 1;
+    }
+    /** One scroll write, with the distance moved. */
+    recordScroll(step) {
+      this.scrollCount += 1;
+      this.scrollSteps.push(Math.abs(step));
+    }
+    /**
+     * Runs its own animation frame loop rather than piggy-backing on the tracker,
+     * so it measures what the browser manages rather than what we ask for.
+     */
+    tick(now) {
+      if (!this.running) return;
+      requestAnimationFrame(this.tick);
+      if (this.lastPaintAt) {
+        const gap = now - this.lastPaintAt;
+        this.frameGaps.push(gap);
+        this.paintCount += 1;
+        if (gap > 32) this.blockedCount += 1;
+      }
+      this.lastPaintAt = now;
+      if (!this.lastReportAt) this.lastReportAt = now;
+      const elapsed = now - this.lastReportAt;
+      if (elapsed < 500) return;
+      const perSecond = (n) => Math.round(n * 1e3 / elapsed);
+      this.set("paint", `${perSecond(this.paintCount)}/s`);
+      this.set("track", `${perSecond(this.trackCount)}/s`);
+      this.set(
+        "model",
+        this.inference.values.length ? `${this.inference.mean.toFixed(0)} / ${this.inference.max.toFixed(0)}ms` : "\u2014"
+      );
+      this.set(
+        "frame",
+        `${this.frameGaps.percentile(0.5).toFixed(0)} / ${this.frameGaps.percentile(0.95).toFixed(0)}ms`
+      );
+      this.set("worst", `${this.frameGaps.max.toFixed(0)}ms`);
+      const blocked = this.paintCount ? this.blockedCount / this.paintCount * 100 : 0;
+      this.set("blocked", `${blocked.toFixed(0)}%`, blocked > 20);
+      this.set(
+        "scroll",
+        this.scrollCount ? `${perSecond(this.scrollCount)}/s ${this.scrollSteps.mean.toFixed(1)}px` : "\u2014"
+      );
+      this.paintCount = 0;
+      this.trackCount = 0;
+      this.scrollCount = 0;
+      this.blockedCount = 0;
+      this.lastReportAt = now;
+    }
+    set(key, value, warn = false) {
+      const node = this.el.querySelector(`[data-k="${key}"]`);
+      if (!node) return;
+      node.textContent = value;
+      node.classList.toggle("is-warn", warn);
+    }
+    destroy() {
+      this.stop();
+      this.el.remove();
     }
   };
 
@@ -1466,11 +1641,14 @@ var HandCursor = (() => {
         onToggleSize: () => this.setMinimized(!this.panel.mini)
       });
       this.panel.mount(this.shadow);
+      this.debug = this.options.debug ? new DebugOverlay() : null;
       this.driver = new CursorDriver(this.options, {
         ui: shadowUi(this.shadow),
+        debug: this.debug,
         onEvent: (type, detail) => this.emit(type, detail)
       });
       this.driver.mount(this.panel.root);
+      this.debug?.mount(this.panel.root);
       this.running = false;
       this.starting = false;
       this.destroyed = false;
@@ -1480,6 +1658,7 @@ var HandCursor = (() => {
       this.lastVideoTime = -1;
       this.lastHandAt = 0;
       this.lastLandmarks = null;
+      this.lastInferenceAt = 0;
       this.applyStyleVariables();
       this.onKeyDown = this.onKeyDown.bind(this);
       this.tick = this.tick.bind(this);
@@ -1599,6 +1778,7 @@ var HandCursor = (() => {
       document.removeEventListener("keydown", this.onKeyDown, true);
       this.landmarker?.close?.();
       this.landmarker = null;
+      this.debug?.destroy();
       this.driver.destroy();
       this.panel.destroy();
       this.host.remove();
@@ -1610,14 +1790,19 @@ var HandCursor = (() => {
       this.frame = requestAnimationFrame(this.tick);
       const video = this.panel.video;
       if (video.readyState < 2 || !video.videoWidth) return;
-      if (video.currentTime !== this.lastVideoTime) {
+      const { maxTrackingFps } = this.options;
+      const dueAt = maxTrackingFps > 0 ? this.lastInferenceAt + 1e3 / maxTrackingFps : 0;
+      if (video.currentTime !== this.lastVideoTime && now >= dueAt) {
         this.lastVideoTime = video.currentTime;
+        this.lastInferenceAt = now;
+        const startedAt = this.debug ? performance.now() : 0;
         try {
           const result = this.landmarker.detectForVideo(video, now);
           this.lastLandmarks = result?.landmarks?.[0] ?? null;
         } catch {
           this.lastLandmarks = null;
         }
+        this.debug?.recordInference(performance.now() - startedAt);
       }
       if (this.lastLandmarks) {
         this.lastHandAt = now;
@@ -1659,7 +1844,8 @@ var HandCursor = (() => {
   var current = null;
   function init(options = {}) {
     current?.destroy();
-    current = new HandCursorController(options);
+    const urlDebug = typeof location !== "undefined" && location.href.includes("handcursor-debug");
+    current = new HandCursorController(urlDebug ? { ...options, debug: true } : options);
     current.mount(options.container || document.body);
     return current;
   }

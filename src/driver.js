@@ -21,14 +21,16 @@ export class CursorDriver {
    * @param {import('./pointer.js').OwnUi} hooks.ui  the trackpad's own chrome
    * @param {Function} [hooks.onEvent]  (type, detail) for every gesture
    */
-  constructor(options, { ui, onEvent } = {}) {
+  constructor(options, { ui, onEvent, debug } = {}) {
     this.options = options;
     this.onEvent = onEvent;
+    this.debug = debug;
 
     this.cursor = new Cursor(options);
     this.hoverStyles = options.emulateHover ? new HoverEmulator() : null;
     this.touch = new TouchEmulator(options, {
       ui,
+      debug,
       hover: this.hoverStyles,
       onTap: (detail) => this.emit('tap', detail),
     });
@@ -56,6 +58,7 @@ export class CursorDriver {
    * @param {number} aspect   camera frame width / height
    */
   consume(landmarks, now, aspect = 1) {
+    this.debug?.recordTracked();
     const dt = this.lastFrameAt ? (now - this.lastFrameAt) / 1000 : 1 / 60;
     this.lastFrameAt = now;
 

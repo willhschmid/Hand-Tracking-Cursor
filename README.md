@@ -24,6 +24,7 @@ corner, asks for the camera, and takes over from there.
 - [JavaScript API](#javascript-api)
 - [Events](#events)
 - [How it works](#how-it-works)
+- [Diagnosing jank](#diagnosing-jank)
 - [Design system](#design-system)
 - [Self-hosting the MediaPipe assets](#self-hosting-the-mediapipe-assets)
 - [Browser support](#browser-support)
@@ -151,6 +152,8 @@ HandCursor.init({
   zIndex: 2147483000,
   numHands: 1,
   container: document.body,  // where the overlay is mounted
+  debug: false,              // on-screen diagnostics; see Diagnosing jank
+  maxTrackingFps: 0,         // 0 = the camera's rate. Lower frees the main thread
 
   camera: { width: 640, height: 480, frameRate: 30 },
 
@@ -297,6 +300,36 @@ styles cannot leak out.
 
 ---
 
+## Diagnosing jank
+
+Scroll or cursor stutter has two causes that feel identical and need opposite
+fixes. Put `handcursor-debug` anywhere in the page URL — no console needed,
+which matters on a phone — and a panel appears in the top left:
+
+| Row | Means |
+| --- | --- |
+| `paint` | repaints per second: the rate the screen can actually update |
+| `track` | landmark frames per second |
+| `model` | milliseconds per inference, mean / worst |
+| `frame` | milliseconds between repaints, median / 95th |
+| `worst` | longest gap between repaints |
+| `blocked` | share of repaints later than 32ms — turns yellow above 20% |
+| `scroll` | scroll writes per second, and the mean step |
+
+Read it while dragging:
+
+- **`paint` near 60 and `track` low** — normal. Landmarks are slow but the page
+  still repaints, and `scroll` should also read near 60/s. Scrolling is smooth.
+- **`paint` collapsed to roughly `track`, `blocked` high, `model` large** — the
+  main thread is saturated by inference. Nothing on it can run at display rate,
+  so no amount of scroll smoothing will help. Cap the model with
+  `maxTrackingFps: 15` (or lower) to buy back headroom; the cursor becomes a
+  little less responsive and everything else gets smoother.
+- **`scroll` far below `paint`** — the scroll runner is being starved
+  specifically. Worth reporting.
+
+---
+
 ## Design system
 
 Built to the *Hand Tracking Cursor Design System* (August 2026). Tokens live in
@@ -434,6 +467,7 @@ src/
   pointer.js      taps and gesture state
   scroll.js       display-rate scrolling and the fling
   hover.js        CSS :hover emulation
+  debug.js        on-screen diagnostics
   hand-graphic.js generated — see scripts/embed-illustration.mjs
   hand-model.js   MediaPipe loading and camera access
   landmarks.js    hand topology, pinch and control-point math

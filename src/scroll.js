@@ -54,8 +54,9 @@ function applyScroll({ node, canX, canY }, dx, dy) {
 }
 
 export class ScrollRunner {
-  constructor(options) {
+  constructor(options, debug) {
     this.options = options;
+    this.debug = debug;
     this.target = null;
     // Distance the hand has asked for but the page has not travelled yet.
     this.pendingX = 0;
@@ -155,7 +156,10 @@ export class ScrollRunner {
       if (Math.abs(this.pendingY) < 0.01) this.pendingY = 0;
     }
 
-    if (dx || dy) applyScroll(this.target, dx, dy);
+    if (dx || dy) {
+      applyScroll(this.target, dx, dy);
+      this.debug?.recordScroll(dy || dx);
+    }
 
     const idle =
       !this.flinging && this.pendingX === 0 && this.pendingY === 0;

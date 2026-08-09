@@ -20,6 +20,20 @@ export const DEFAULTS = {
   zIndex: 2147483000,
   /** Hands to track. Only the first one drives the cursor. */
   numHands: 1,
+  /**
+   * Show the on-screen diagnostics panel. Also enabled by putting
+   * `handcursor-debug` anywhere in the page URL, which is the only practical
+   * way to read these numbers on a phone.
+   */
+  debug: false,
+  /**
+   * Cap on how often the model runs, in frames per second. 0 leaves it at the
+   * camera's rate. Inference is synchronous on the main thread, so on a slow
+   * device it can starve requestAnimationFrame — and then nothing else can run
+   * smoothly either. Capping it trades tracking responsiveness for a main
+   * thread that has room to paint.
+   */
+  maxTrackingFps: 0,
 
   /** Camera constraints handed to getUserMedia. */
   camera: { width: 640, height: 480, frameRate: 30 },

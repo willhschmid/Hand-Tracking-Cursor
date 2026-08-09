@@ -65,7 +65,7 @@ export class TouchEmulator {
    * @param {OwnUi} [hooks.ui]  the trackpad's own chrome
    * @param {Function} [hooks.onTap]
    */
-  constructor(options, { ui, onTap, hover } = {}) {
+  constructor(options, { ui, onTap, hover, debug } = {}) {
     this.options = options;
     this.ui = ui;
     this.onTap = onTap;
@@ -78,7 +78,7 @@ export class TouchEmulator {
     this.last = null;
     this.velocity = { x: 0, y: 0 };
     this.scrollTarget = null;
-    this.scroller = new ScrollRunner(options);
+    this.scroller = new ScrollRunner(options, debug);
   }
 
   /**

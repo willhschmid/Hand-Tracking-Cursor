@@ -3,6 +3,7 @@ import { CSS } from './styles.js';
 import { FONT_URL } from './tokens.js';
 import { Panel } from './panel.js';
 import { CursorDriver } from './driver.js';
+import { DebugOverlay } from './debug.js';
 import { closeCamera, loadModel, openCamera } from './hand-model.js';
 
 /** How long the hand can be missing before the cursor fades out. */
@@ -32,11 +33,14 @@ export class HandCursorController {
     });
     this.panel.mount(this.shadow);
 
+    this.debug = this.options.debug ? new DebugOverlay() : null;
     this.driver = new CursorDriver(this.options, {
       ui: shadowUi(this.shadow),
+      debug: this.debug,
       onEvent: (type, detail) => this.emit(type, detail),
     });
     this.driver.mount(this.panel.root);
+    this.debug?.mount(this.panel.root);
 
     this.running = false;
     this.starting = false;
@@ -47,6 +51,7 @@ export class HandCursorController {
     this.lastVideoTime = -1;
     this.lastHandAt = 0;
     this.lastLandmarks = null;
+    this.lastInferenceAt = 0;
 
     this.applyStyleVariables();
     this.onKeyDown = this.onKeyDown.bind(this);
@@ -189,6 +194,7 @@ export class HandCursorController {
     document.removeEventListener('keydown', this.onKeyDown, true);
     this.landmarker?.close?.();
     this.landmarker = null;
+    this.debug?.destroy();
     this.driver.destroy();
     this.panel.destroy();
     this.host.remove();
@@ -204,8 +210,17 @@ export class HandCursorController {
     const video = this.panel.video;
     if (video.readyState < 2 || !video.videoWidth) return;
 
-    if (video.currentTime !== this.lastVideoTime) {
+    // Inference is synchronous and, on a slow device, long. `maxTrackingFps`
+    // deliberately skips frames to leave the main thread room to paint —
+    // without headroom, requestAnimationFrame cannot run at display rate and
+    // every animation on the page suffers, this library's included.
+    const { maxTrackingFps } = this.options;
+    const dueAt = maxTrackingFps > 0 ? this.lastInferenceAt + 1000 / maxTrackingFps : 0;
+
+    if (video.currentTime !== this.lastVideoTime && now >= dueAt) {
       this.lastVideoTime = video.currentTime;
+      this.lastInferenceAt = now;
+      const startedAt = this.debug ? performance.now() : 0;
       try {
         const result = this.landmarker.detectForVideo(video, now);
         this.lastLandmarks = result?.landmarks?.[0] ?? null;
@@ -213,6 +228,7 @@ export class HandCursorController {
         // A dropped frame is not worth tearing the session down for.
         this.lastLandmarks = null;
       }
+      this.debug?.recordInference(performance.now() - startedAt);
     }
 
     if (this.lastLandmarks) {
