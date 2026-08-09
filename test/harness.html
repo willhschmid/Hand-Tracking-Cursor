@@ -43,7 +43,12 @@
       });
 
       // Smoothing is turned almost off so a fed position lands immediately.
-      window.hc = HandCursor.init({ font: false, smoothing: { minCutoff: 60, beta: 0 } });
+      const mode = new URLSearchParams(location.search).get('mode') || 'write';
+      window.hc = HandCursor.init({
+        font: false,
+        smoothing: { minCutoff: 60, beta: 0 },
+        drag: { mode },
+      });
 
       if (new URLSearchParams(location.search).get('smooth') === '1') {
         document.documentElement.style.scrollBehavior = 'smooth';

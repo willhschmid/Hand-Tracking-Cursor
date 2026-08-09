@@ -300,6 +300,23 @@ export const CSS = `
 .hc-debug-row b { font-weight: 500; }
 .hc-debug-row b.is-warn { color: ${COLOR.yellow}; }
 
+.hc-debug-trace {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  max-width: 240px;
+}
+
+.hc-debug-trace span { display: block; opacity: 0.55; }
+
+.hc-debug-trace code {
+  display: block;
+  font: inherit;
+  word-spacing: 2px;
+  line-height: 14px;
+  overflow-wrap: anywhere;
+}
+
 /* ------------------------------------------------------------------ a11y -- */
 
 .hc-sr {

@@ -589,6 +589,40 @@ for (const lenis of [false, true]) {
   );
 }
 
+// ------------------------------------------------------ native scroll mode --
+//
+// The alternative strategy: hand the distance to the browser as a smooth
+// scroll rather than writing a position every frame. It exists because on iOS
+// the scroll position lives on a different thread from JavaScript, so a
+// browser-run animation can be smooth where per-frame writes are not.
+
+{
+  const native = await browser.newPage({ viewport: { width: 420, height: 800 } });
+  const errors = [];
+  native.on('pageerror', (error) => errors.push(error.message));
+  await native.goto(`http://localhost:${PORT}/test/harness.html?mode=native`, {
+    waitUntil: 'load',
+  });
+  const configured = await native.evaluate(() => window.hc.options.drag.mode);
+  const result = await native.evaluate(() => window.timedDrag({ trackingFps: 15 }));
+  await native.waitForTimeout(600);
+  const settled = await native.evaluate(() => window.scrollY);
+  await native.close();
+
+  check('native mode is what the fixture configured', configured === 'native', configured);
+  check(
+    'native mode scrolls the page',
+    result.scrolled > 150,
+    `moved ${Math.round(result.scrolled)}px — ${JSON.stringify(result)}`,
+  );
+  check(
+    'native mode keeps going after release',
+    settled >= result.scrolled - 1,
+    `during ${Math.round(result.scrolled)}, settled ${Math.round(settled)}`,
+  );
+  check('native mode runs without errors', errors.length === 0, errors.join(' | '));
+}
+
 check('no uncaught page errors', pageErrors.length === 0, pageErrors.join(' | '));
 
 // ------------------------------------------------------------------ report --

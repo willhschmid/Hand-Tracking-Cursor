@@ -79,11 +79,24 @@ export const DEFAULTS = {
     threshold: 34,
     holdDelay: 140,
     /**
-     * How much of the remaining distance the page closes each 60fps frame while
-     * dragging. Landmarks arrive slower than the screen repaints — on a phone,
-     * far slower — so applying each one the instant it lands makes the page
-     * lurch and stall. Easing toward the target instead spreads that into
-     * something continuous. 1 disables the smoothing.
+     * How the scroll is actually applied.
+     *
+     *   'write'  — set the scroll position every animation frame. Direct, and
+     *              what a trackpad feels like.
+     *   'native' — hand the distance to the browser as a smooth scroll and let
+     *              it animate. Slower to respond, but the animation runs where
+     *              the browser runs its own scrolling, which on iOS is a
+     *              different thread from JavaScript.
+     */
+    mode: 'write',
+    /** How often `native` mode re-aims at the hand, in ms. */
+    retargetMs: 110,
+    /**
+     * `write` mode only: how much of the remaining distance the page closes
+     * each 60fps frame. Landmarks arrive slower than the screen repaints, so
+     * applying each one the instant it lands makes the page lurch and stall.
+     * Easing toward the target spreads that into something continuous.
+     * 1 disables the smoothing.
      */
     follow: 0.22,
     /** Fling decay, written per 60fps frame but applied over real time. */

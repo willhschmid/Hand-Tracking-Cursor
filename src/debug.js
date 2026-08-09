@@ -71,13 +71,24 @@ export class DebugOverlay {
     this.targetLabel = '';
     this.targetSmooth = false;
 
+    // Per-repaint scroll deltas from the most recent drag. Aggregates say how
+    // bad it is; only the sequence says *what shape* the badness is, and the
+    // shape is what names the cause.
+    this.trace = [];
+    this.traceNode = null;
+    this.lastScrollTop = null;
+    this.tracing = false;
+
     this.el = document.createElement('div');
     this.el.className = 'hc-debug';
-    this.el.innerHTML = ROWS.map(
-      ([key, title]) =>
-        `<div class="hc-debug-row" title="${title}">` +
-        `<span>${key}</span><b data-k="${key}">—</b></div>`,
-    ).join('');
+    this.el.innerHTML =
+      ROWS.map(
+        ([key, title]) =>
+          `<div class="hc-debug-row" title="${title}">` +
+          `<span>${key}</span><b data-k="${key}">—</b></div>`,
+      ).join('') +
+      '<div class="hc-debug-trace"><span>per-frame scroll</span>' +
+      '<code data-k="trace">drag the page to record</code></div>';
     this.tick = this.tick.bind(this);
   }
 
@@ -119,6 +130,19 @@ export class DebugOverlay {
    * smooth scrolling — the single most likely reason a page lurches while
    * everything else on it stays smooth.
    */
+  /** Starts a fresh recording; called when a drag takes hold of a container. */
+  beginTrace(node) {
+    this.traceNode = node;
+    this.trace = [];
+    this.lastScrollTop = null;
+    this.tracing = true;
+  }
+
+  /** Freezes the recording so it can be read, and screenshotted, afterwards. */
+  endTrace() {
+    this.tracing = false;
+  }
+
   recordTarget(node, smooth) {
     const name =
       node === document.scrollingElement || node === document.documentElement
@@ -143,6 +167,17 @@ export class DebugOverlay {
       if (gap > 32) this.blockedCount += 1;
     }
     this.lastPaintAt = now;
+
+    // Sampled here, in a loop that is not the one doing the scrolling, so it
+    // records what the page actually did rather than what was asked of it.
+    if (this.tracing && this.traceNode) {
+      const top = this.traceNode.scrollTop;
+      if (this.lastScrollTop !== null) {
+        this.trace.push(Math.round(top - this.lastScrollTop));
+        if (this.trace.length > 240) this.trace.shift();
+      }
+      this.lastScrollTop = top;
+    }
 
     if (!this.lastReportAt) this.lastReportAt = now;
     const elapsed = now - this.lastReportAt;
@@ -172,6 +207,14 @@ export class DebugOverlay {
         : '—',
     );
     this.set('target', this.targetLabel || '—', Boolean(this.targetSmooth));
+
+    if (this.trace.length) {
+      // Trimmed to the part where the page was actually moving.
+      const first = this.trace.findIndex((d) => d !== 0);
+      const active = first === -1 ? this.trace : this.trace.slice(first);
+      const node = this.el.querySelector('[data-k="trace"]');
+      if (node) node.textContent = active.slice(-44).join(' ');
+    }
 
     this.paintCount = 0;
     this.trackCount = 0;

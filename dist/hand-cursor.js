@@ -105,11 +105,24 @@ var HandCursor = (() => {
       threshold: 34,
       holdDelay: 140,
       /**
-       * How much of the remaining distance the page closes each 60fps frame while
-       * dragging. Landmarks arrive slower than the screen repaints — on a phone,
-       * far slower — so applying each one the instant it lands makes the page
-       * lurch and stall. Easing toward the target instead spreads that into
-       * something continuous. 1 disables the smoothing.
+       * How the scroll is actually applied.
+       *
+       *   'write'  — set the scroll position every animation frame. Direct, and
+       *              what a trackpad feels like.
+       *   'native' — hand the distance to the browser as a smooth scroll and let
+       *              it animate. Slower to respond, but the animation runs where
+       *              the browser runs its own scrolling, which on iOS is a
+       *              different thread from JavaScript.
+       */
+      mode: "write",
+      /** How often `native` mode re-aims at the hand, in ms. */
+      retargetMs: 110,
+      /**
+       * `write` mode only: how much of the remaining distance the page closes
+       * each 60fps frame. Landmarks arrive slower than the screen repaints, so
+       * applying each one the instant it lands makes the page lurch and stall.
+       * Easing toward the target spreads that into something continuous.
+       * 1 disables the smoothing.
        */
       follow: 0.22,
       /** Fling decay, written per 60fps frame but applied over real time. */
@@ -511,6 +524,23 @@ var HandCursor = (() => {
 .hc-debug-row b { font-weight: 500; }
 .hc-debug-row b.is-warn { color: ${COLOR.yellow}; }
 
+.hc-debug-trace {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  max-width: 240px;
+}
+
+.hc-debug-trace span { display: block; opacity: 0.55; }
+
+.hc-debug-trace code {
+  display: block;
+  font: inherit;
+  word-spacing: 2px;
+  line-height: 14px;
+  overflow-wrap: anywhere;
+}
+
 /* ------------------------------------------------------------------ a11y -- */
 
 .hc-sr {
@@ -899,6 +929,7 @@ var HandCursor = (() => {
       this.frame = null;
       this.lastFrameAt = 0;
       this.restoreBehavior = null;
+      this.lastRetargetAt = 0;
       this.tick = this.tick.bind(this);
     }
     setTarget(target) {
@@ -908,9 +939,12 @@ var HandCursor = (() => {
         this.releaseBehavior();
       }
       this.target = target;
-      if (target && !this.restoreBehavior) {
+      if (!target) return;
+      this.debug?.recordTarget(target.node, usesSmoothScroll(target.node));
+      this.debug?.beginTrace(target.node);
+      this.lastRetargetAt = 0;
+      if (this.options.drag.mode !== "native" && !this.restoreBehavior) {
         this.restoreBehavior = suppressSmoothScroll(target.node);
-        this.debug?.recordTarget(target.node, usesSmoothScroll(target.node));
       }
     }
     releaseBehavior() {
@@ -923,11 +957,50 @@ var HandCursor = (() => {
       this.flinging = false;
       this.pendingX += dx;
       this.pendingY += dy;
-      this.start();
+      if (this.options.drag.mode === "native") this.retarget();
+      else this.start();
+    }
+    /**
+     * The `native` strategy: hand the whole remaining distance to the browser as
+     * one smooth scroll and let it animate, rather than writing a position every
+     * frame.
+     *
+     * On iOS the scroll position lives on a separate thread from JavaScript, and
+     * per-frame writes have to be synchronised across to it. A browser-run
+     * animation happens on that side of the fence instead, which is the same
+     * reason the cursor — a composited transform — stays smooth when the page
+     * does not. The cost is latency: the page trails the hand by about the
+     * retarget interval.
+     */
+    retarget(force = false) {
+      const now = performance.now();
+      const { retargetMs } = this.options.drag;
+      if (!force && now - this.lastRetargetAt < retargetMs) return;
+      this.lastRetargetAt = now;
+      const { node, canX, canY } = this.target;
+      const top = Math.round(node.scrollTop - (canY ? this.pendingY : 0));
+      const left = Math.round(node.scrollLeft - (canX ? this.pendingX : 0));
+      this.pendingX = 0;
+      this.pendingY = 0;
+      try {
+        node.scrollTo({ top, left, behavior: "smooth" });
+      } catch {
+        node.scrollTop = top;
+        node.scrollLeft = left;
+      }
+      this.debug?.recordScroll(0);
     }
     /** Pinch released while moving: carry on under momentum. */
     fling(velocityX, velocityY) {
-      const { minVelocity, maxVelocity } = this.options.drag;
+      const { minVelocity, maxVelocity, mode, friction } = this.options.drag;
+      if (mode === "native") {
+        const seconds = 1 / (60 * (1 - friction));
+        this.pendingX += velocityX * seconds * 0.5;
+        this.pendingY += velocityY * seconds * 0.5;
+        this.retarget(true);
+        this.releaseBehavior();
+        return;
+      }
       const clamp2 = (v) => Math.max(-maxVelocity, Math.min(maxVelocity, v));
       this.velocityX = clamp2(velocityX);
       this.velocityY = clamp2(velocityY);
@@ -984,8 +1057,10 @@ var HandCursor = (() => {
         this.debug?.recordScroll(dy || dx);
       }
       const idle = !this.flinging && this.pendingX === 0 && this.pendingY === 0;
-      if (idle) this.releaseBehavior();
-      else this.frame = requestAnimationFrame(this.tick);
+      if (idle) {
+        this.releaseBehavior();
+        this.debug?.endTrace();
+      } else this.frame = requestAnimationFrame(this.tick);
     }
     /** Distance the page still owes, so a release can fold it into the fling. */
     get pending() {
@@ -1489,11 +1564,15 @@ var HandCursor = (() => {
       this.running = false;
       this.targetLabel = "";
       this.targetSmooth = false;
+      this.trace = [];
+      this.traceNode = null;
+      this.lastScrollTop = null;
+      this.tracing = false;
       this.el = document.createElement("div");
       this.el.className = "hc-debug";
       this.el.innerHTML = ROWS.map(
         ([key, title]) => `<div class="hc-debug-row" title="${title}"><span>${key}</span><b data-k="${key}">\u2014</b></div>`
-      ).join("");
+      ).join("") + '<div class="hc-debug-trace"><span>per-frame scroll</span><code data-k="trace">drag the page to record</code></div>';
       this.tick = this.tick.bind(this);
     }
     mount(parent) {
@@ -1528,6 +1607,17 @@ var HandCursor = (() => {
      * smooth scrolling — the single most likely reason a page lurches while
      * everything else on it stays smooth.
      */
+    /** Starts a fresh recording; called when a drag takes hold of a container. */
+    beginTrace(node) {
+      this.traceNode = node;
+      this.trace = [];
+      this.lastScrollTop = null;
+      this.tracing = true;
+    }
+    /** Freezes the recording so it can be read, and screenshotted, afterwards. */
+    endTrace() {
+      this.tracing = false;
+    }
     recordTarget(node, smooth) {
       const name = node === document.scrollingElement || node === document.documentElement ? "page" : node.tagName.toLowerCase() + (node.id ? `#${node.id}` : "");
       this.targetLabel = `${name} ${smooth ? "SMOOTH" : "auto"}`;
@@ -1547,6 +1637,14 @@ var HandCursor = (() => {
         if (gap > 32) this.blockedCount += 1;
       }
       this.lastPaintAt = now;
+      if (this.tracing && this.traceNode) {
+        const top = this.traceNode.scrollTop;
+        if (this.lastScrollTop !== null) {
+          this.trace.push(Math.round(top - this.lastScrollTop));
+          if (this.trace.length > 240) this.trace.shift();
+        }
+        this.lastScrollTop = top;
+      }
       if (!this.lastReportAt) this.lastReportAt = now;
       const elapsed = now - this.lastReportAt;
       if (elapsed < 500) return;
@@ -1569,6 +1667,12 @@ var HandCursor = (() => {
         this.scrollCount ? `${perSecond(this.scrollCount)}/s ${this.scrollSteps.mean.toFixed(1)}px` : "\u2014"
       );
       this.set("target", this.targetLabel || "\u2014", Boolean(this.targetSmooth));
+      if (this.trace.length) {
+        const first = this.trace.findIndex((d) => d !== 0);
+        const active = first === -1 ? this.trace : this.trace.slice(first);
+        const node = this.el.querySelector('[data-k="trace"]');
+        if (node) node.textContent = active.slice(-44).join(" ");
+      }
       this.paintCount = 0;
       this.trackCount = 0;
       this.scrollCount = 0;

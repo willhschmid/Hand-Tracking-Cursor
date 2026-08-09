@@ -102,6 +102,7 @@ export class ScrollRunner {
     this.frame = null;
     this.lastFrameAt = 0;
     this.restoreBehavior = null;
+    this.lastRetargetAt = 0;
     this.tick = this.tick.bind(this);
   }
 
@@ -112,9 +113,15 @@ export class ScrollRunner {
       this.releaseBehavior();
     }
     this.target = target;
-    if (target && !this.restoreBehavior) {
+    if (!target) return;
+
+    this.debug?.recordTarget(target.node, usesSmoothScroll(target.node));
+    this.debug?.beginTrace(target.node);
+    this.lastRetargetAt = 0;
+    // `native` mode wants the browser's smooth scrolling, so it must not be
+    // suppressed there.
+    if (this.options.drag.mode !== 'native' && !this.restoreBehavior) {
       this.restoreBehavior = suppressSmoothScroll(target.node);
-      this.debug?.recordTarget(target.node, usesSmoothScroll(target.node));
     }
   }
 
@@ -129,12 +136,55 @@ export class ScrollRunner {
     this.flinging = false;
     this.pendingX += dx;
     this.pendingY += dy;
-    this.start();
+    if (this.options.drag.mode === 'native') this.retarget();
+    else this.start();
+  }
+
+  /**
+   * The `native` strategy: hand the whole remaining distance to the browser as
+   * one smooth scroll and let it animate, rather than writing a position every
+   * frame.
+   *
+   * On iOS the scroll position lives on a separate thread from JavaScript, and
+   * per-frame writes have to be synchronised across to it. A browser-run
+   * animation happens on that side of the fence instead, which is the same
+   * reason the cursor — a composited transform — stays smooth when the page
+   * does not. The cost is latency: the page trails the hand by about the
+   * retarget interval.
+   */
+  retarget(force = false) {
+    const now = performance.now();
+    const { retargetMs } = this.options.drag;
+    if (!force && now - this.lastRetargetAt < retargetMs) return;
+    this.lastRetargetAt = now;
+
+    const { node, canX, canY } = this.target;
+    const top = Math.round(node.scrollTop - (canY ? this.pendingY : 0));
+    const left = Math.round(node.scrollLeft - (canX ? this.pendingX : 0));
+    this.pendingX = 0;
+    this.pendingY = 0;
+    try {
+      node.scrollTo({ top, left, behavior: 'smooth' });
+    } catch {
+      node.scrollTop = top;
+      node.scrollLeft = left;
+    }
+    this.debug?.recordScroll(0);
   }
 
   /** Pinch released while moving: carry on under momentum. */
   fling(velocityX, velocityY) {
-    const { minVelocity, maxVelocity } = this.options.drag;
+    const { minVelocity, maxVelocity, mode, friction } = this.options.drag;
+    if (mode === 'native') {
+      // One last throw, distance derived from the same decay the per-frame
+      // path uses, so the two modes coast about equally far.
+      const seconds = 1 / (60 * (1 - friction));
+      this.pendingX += velocityX * seconds * 0.5;
+      this.pendingY += velocityY * seconds * 0.5;
+      this.retarget(true);
+      this.releaseBehavior();
+      return;
+    }
     const clamp = (v) => Math.max(-maxVelocity, Math.min(maxVelocity, v));
     // Whatever the hand asked for and did not get yet is folded into the throw,
     // so nothing is silently dropped at the moment of release.
@@ -208,7 +258,10 @@ export class ScrollRunner {
 
     const idle =
       !this.flinging && this.pendingX === 0 && this.pendingY === 0;
-    if (idle) this.releaseBehavior();
+    if (idle) {
+      this.releaseBehavior();
+      this.debug?.endTrace();
+    }
     else this.frame = requestAnimationFrame(this.tick);
   }
 

@@ -188,7 +188,9 @@ HandCursor.init({
   drag: {
     threshold: 34,           // px of travel before a scroll starts
     holdDelay: 140,          // ms the pinch must be held first
-    follow: 0.22,            // how fast the page catches the hand; 1 = no easing
+    mode: 'write',           // 'write' | 'native' — see Diagnosing jank
+    retargetMs: 110,         // native mode: how often it re-aims at the hand
+    follow: 0.22,            // write mode: how fast the page catches the hand
     friction: 0.94,          // fling decay, per 60fps frame, applied over real time
     minVelocity: 24,         // px/s — below this a fling stops
     maxVelocity: 3600,       // px/s
@@ -336,6 +338,37 @@ Read it while dragging:
   little less responsive and everything else gets smoother.
 - **`scroll` far below `paint`** — the scroll runner is being starved
   specifically. Worth reporting.
+
+### The trace
+
+The panel's last block records the scroll movement of every repaint during the
+most recent drag, and freezes it afterwards so it can be read or screenshotted.
+Aggregates say how bad it is; only the sequence says what shape it is, and the
+shape names the cause:
+
+| Trace | Cause |
+| --- | --- |
+| `11 8 6 11 8 6` | healthy — continuous movement every frame |
+| `25 0 0 25 0 0` | quantized to the landmark rate |
+| `0 0 0 90 0 0` | something is batching or animating the writes |
+| `6 6 -30 6 6` | something else is moving the scroll position too |
+| `5 0 5 0 0 5 0` | frames are being dropped |
+
+### If per-frame writes are the problem
+
+`drag.mode: 'native'` is a different strategy: rather than writing a scroll
+position every frame, it hands the distance to the browser as a single smooth
+scroll and lets the browser animate it.
+
+```js
+HandCursor.init({ drag: { mode: 'native' } });
+```
+
+This matters most on iOS, where the scroll position lives on a different thread
+from JavaScript and every write has to be synchronised across. A browser-run
+animation happens on that side of the boundary — the same reason the cursor,
+which is a composited transform, stays smooth when the page does not. The cost
+is latency: the page trails the hand by roughly `retargetMs`.
 
 `target` names the element being scrolled. It reads `page` for the document, or
 the element's tag and id. If it says `SMOOTH` in yellow, that element's CSS asks
