@@ -15,6 +15,17 @@
       /* No transition, so the mirrored rule can be read back synchronously. */
       #hoverme { margin-top: 20px; width: 300px; padding: 20px; background: rgb(10, 20, 30); }
       #hoverme:hover { background: rgb(0, 202, 72); }
+
+      /* Three ways a page says "this can be dragged", one of each. */
+      #card { margin-top: 20px; width: 200px; height: 80px; background: #ddd; }
+      #dropzone { margin-top: 12px; width: 200px; height: 80px; background: #eee; }
+      /* A library-style handle: no attribute, no selector, just the CSS that
+         every drag library leaves behind. */
+      #handle {
+        margin-top: 12px; width: 200px; height: 80px; background: #cfc;
+        cursor: grab; touch-action: none; position: relative;
+      }
+      #plain { margin-top: 12px; width: 200px; height: 80px; background: #fdd; }
     </style>
   </head>
   <body>
@@ -23,6 +34,10 @@
       <span id="out">0</span>
       <div id="box"></div>
       <div id="hoverme">hover target</div>
+      <div id="card" draggable="true">html5 draggable</div>
+      <div id="dropzone">drop zone</div>
+      <div id="handle">library handle</div>
+      <div id="plain">not draggable</div>
     </div>
 
     <script src="../dist/hand-cursor.js" data-manual></script>
@@ -36,6 +51,43 @@
         { length: 40 },
         (_, i) => `<div>row ${i}</div>`,
       ).join('');
+
+      /*
+       * The HTML5 drop zone: a target only accepts a drop by cancelling
+       * `dragover`, so this is what a real one has to do.
+       */
+      window.dragLog = [];
+      for (const type of ['dragstart', 'drag', 'dragend']) {
+        document.getElementById('card').addEventListener(type, (e) => {
+          window.dragLog.push(type);
+        });
+      }
+      for (const type of ['dragenter', 'dragover', 'dragleave', 'drop']) {
+        document.getElementById('dropzone').addEventListener(type, (e) => {
+          e.preventDefault();
+          window.dragLog.push(type);
+        });
+      }
+
+      /*
+       * The pointer-event kind, which is how every modern drag library works:
+       * listeners on the document, translating by the delta since pointerdown.
+       */
+      {
+        const handle = document.getElementById('handle');
+        let from = null;
+        handle.addEventListener('pointerdown', (e) => {
+          from = { x: e.clientX, y: e.clientY };
+        });
+        document.addEventListener('pointermove', (e) => {
+          if (!from) return;
+          handle.style.transform =
+            `translate(${e.clientX - from.x}px, ${e.clientY - from.y}px)`;
+        });
+        document.addEventListener('pointerup', () => {
+          from = null;
+        });
+      }
 
       let clicks = 0;
       document.getElementById('btn').addEventListener('click', () => {
@@ -116,6 +168,28 @@
       };
 
       /**
+       * Scrolls an element to the middle of the viewport and says where it
+       * landed.
+       *
+       * Waits for the page to stop moving first. A throw from a previous
+       * gesture coasts for about a second and a half, and it will happily carry
+       * on scrolling after `scrollIntoView` has run — leaving coordinates that
+       * pointed at the right thing when they were measured and somewhere else
+       * by the time they are used.
+       */
+      window.spot = async (id) => {
+        let last = NaN;
+        while (last !== window.scrollY) {
+          last = window.scrollY;
+          await new Promise((r) => setTimeout(r, 80));
+        }
+        const el = document.getElementById(id);
+        el.scrollIntoView({ block: 'center', behavior: 'instant' });
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      };
+
+      /**
        * A plain pinch-drag, awaited, in real time.
        *
        * Real time is not optional here. The scroll runner reads the hand's path
@@ -123,11 +197,17 @@
        * couple of milliseconds of made-up time is not a drag it can serve — nor
        * one any device could produce.
        */
-      window.pinchDrag = async ({ x, y, dx = 0, dy = 0, steps = 12, fps = 30, release = true } = {}) => {
+      window.pinchDrag = async ({ x, y, dx = 0, dy = 0, steps = 12, fps = 30, release = true, holdMs = 0 } = {}) => {
         let cx = x;
         let cy = y;
         for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(cx, cy), false);
         window.feedNow(...window.toCamera(cx, cy), true);
+        // Pinched but still, which is what a long press is.
+        const until = performance.now() + holdMs;
+        while (performance.now() < until) {
+          await new Promise((r) => setTimeout(r, 1000 / fps));
+          window.feedNow(...window.toCamera(cx, cy), true);
+        }
         for (let i = 0; i < steps; i++) {
           await new Promise((r) => setTimeout(r, 1000 / fps));
           cx += dx / steps;
@@ -148,11 +228,16 @@
         window.lenis?.scrollTo(0, { immediate: true });
         await new Promise((r) => setTimeout(r, 200));
 
+        // Timestamped, because what matters is the speed the page moved at, not
+        // the distance it covered per callback. If the browser drops a repaint
+        // the next one legitimately covers twice the ground at the same speed,
+        // and counting that as a jump measures the machine's load rather than
+        // the scroll.
         const samples = [];
         let sampling = true;
-        const sample = () => {
+        const sample = (t) => {
           if (!sampling) return;
-          samples.push(window.scrollY);
+          samples.push({ y: window.scrollY, t });
           requestAnimationFrame(sample);
         };
         requestAnimationFrame(sample);
@@ -192,8 +277,13 @@
         await new Promise((r) => setTimeout(r, 300));
         sampling = false;
 
+        // Speed per repaint, normalized to one 60Hz frame so the numbers still
+        // read as pixels-per-step.
         const deltas = [];
-        for (let i = 1; i < samples.length; i++) deltas.push(samples[i] - samples[i - 1]);
+        for (let i = 1; i < samples.length; i++) {
+          const dt = Math.max(samples[i].t - samples[i - 1].t, 1);
+          deltas.push(((samples[i].y - samples[i - 1].y) / dt) * (1000 / 60));
+        }
         // Only judge frames from the moment the page actually starts moving.
         const first = deltas.findIndex((d) => Math.abs(d) > 0.5);
         const active = first === -1 ? [] : deltas.slice(first);
@@ -210,7 +300,7 @@
           frames: active.length,
           stalled: active.filter((d) => Math.abs(d) <= 0.5).length,
           biggestJump: Math.max(0, ...active.map(Math.abs)),
-          scrolled: samples.at(-1) - samples[0],
+          scrolled: samples.at(-1).y - samples[0].y,
           step: Number(mean.toFixed(2)),
           roughness: Number((churn / Math.max(held.length - 1, 1) / (mean || 1)).toFixed(3)),
         };

@@ -33,6 +33,8 @@ export class CursorDriver {
       debug,
       hover: this.hoverStyles,
       onTap: (detail) => this.emit('tap', detail),
+      onGrab: ({ type, ...detail }) =>
+        this.emit(type === 'start' ? 'grab' : 'drop', detail),
     });
     this.filter = new PointFilter(options.smoothing);
 

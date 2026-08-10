@@ -176,6 +176,58 @@ var HandCursor = (() => {
       maxVelocity: 3600
     },
     /**
+     * Picking an element up and carrying it, rather than scrolling the page under
+     * it.
+     *
+     * A page has no single way of saying "this can be dragged", so three are
+     * looked for: the `draggable` attribute, the CSS a drag library leaves behind
+     * on its handles, and whatever `selector` names.
+     */
+    grab: {
+      enabled: true,
+      /**
+       * Extra selector for handles a library sets up in JavaScript and does not
+       * advertise in the markup or the CSS.
+       */
+      selector: "[data-hc-grab]",
+      /**
+       * Computed cursors that mean "this moves". A page that draws `grab` or
+       * `move` under the pointer is telling the user it can be picked up, which
+       * makes it the most reliable signal there is.
+       */
+      cursors: [
+        "grab",
+        "grabbing",
+        "move",
+        "all-scroll",
+        "col-resize",
+        "row-resize",
+        "ew-resize",
+        "ns-resize",
+        "nesw-resize",
+        "nwse-resize"
+      ],
+      /**
+       * Treat `touch-action: none` as a drag handle. Libraries set it so the
+       * browser does not scroll while they drag, which makes it a good tell.
+       * Never applied to `body` or the document element, where it describes the
+       * whole page rather than a handle.
+       */
+      touchAction: true,
+      /** Synthesize the HTML5 dragstart/dragover/drop sequence for `draggable`. */
+      html5: true,
+      /**
+       * How long the pinch must be held before a drag on something draggable
+       * carries it rather than scrolling, in ms.
+       *
+       * 0 means it always carries it, which is what a mouse does. Raise it for a
+       * scrolling list of draggable cards: then a quick pinch-drag scrolls and
+       * only a held one picks a card up, the same way a touchscreen settles the
+       * conflict. 300 is a normal long-press.
+       */
+      holdDelay: 0
+    },
+    /**
      * The playful bit: the arrow leans into the direction it travels, capped so
      * it sways rather than spins.
      */
@@ -916,6 +968,129 @@ var HandCursor = (() => {
     }
   };
 
+  // src/events.js
+  function eventInit(x, y, extra) {
+    return {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window,
+      clientX: x,
+      clientY: y,
+      screenX: (window.screenX || 0) + x,
+      screenY: (window.screenY || 0) + y,
+      ...extra
+    };
+  }
+  var POINTER = { pointerId: 1, pointerType: "touch", isPrimary: true, width: 1, height: 1 };
+  function firePointer(el, type, x, y, extra) {
+    el.dispatchEvent(new PointerEvent(type, eventInit(x, y, { ...POINTER, ...extra })));
+  }
+  function fireMouse(el, type, x, y, extra) {
+    el.dispatchEvent(new MouseEvent(type, eventInit(x, y, extra)));
+  }
+  function fireDrag(el, type, x, y, dataTransfer) {
+    return el.dispatchEvent(new DragEvent(type, eventInit(x, y, { dataTransfer })));
+  }
+
+  // src/grab.js
+  function cursorOwner(node, cursor) {
+    let owner = node;
+    while (owner.parentElement) {
+      const parent = owner.parentElement;
+      if (getComputedStyle(parent).cursor !== cursor) return owner;
+      if (parent === document.body || parent === document.documentElement) return null;
+      owner = parent;
+    }
+    return null;
+  }
+  function grabbableFrom(el, options) {
+    const { selector, cursors, touchAction } = options;
+    const styled = new Set(cursors);
+    let node = el;
+    while (node && node.nodeType === 1) {
+      const html5 = node.getAttribute?.("draggable") === "true";
+      if (html5) return { node, html5: true };
+      if (selector && node.matches?.(selector)) return { node, html5: false };
+      const root = node === document.body || node === document.documentElement;
+      if (!root) {
+        const style = getComputedStyle(node);
+        if (styled.has(style.cursor)) {
+          const owner = cursorOwner(node, style.cursor);
+          if (owner) return { node: owner, html5: false };
+        }
+        if (touchAction && style.touchAction === "none") return { node, html5: false };
+      }
+      node = node.parentElement || node.getRootNode()?.host || null;
+    }
+    return null;
+  }
+  var Grab = class {
+    /**
+     * @param {{node: Element, html5: boolean}} target  what is being picked up
+     * @param {number} x  where the pinch closed — not where it is now
+     * @param {number} y
+     */
+    constructor(target, x, y, useHtml5) {
+      this.node = target.node;
+      this.over = null;
+      this.canDrop = false;
+      this.dataTransfer = null;
+      if (target.html5 && useHtml5) {
+        try {
+          this.dataTransfer = new DataTransfer();
+        } catch {
+          this.dataTransfer = null;
+        }
+      }
+      firePointer(this.node, "pointerdown", x, y, { buttons: 1, button: 0 });
+      fireMouse(this.node, "mousedown", x, y, { buttons: 1, button: 0 });
+      if (this.dataTransfer) {
+        this.dataTransfer.effectAllowed = "all";
+        fireDrag(this.node, "dragstart", x, y, this.dataTransfer);
+      }
+    }
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @param {Element|null} under  what the cursor is over, excluding our own UI
+     */
+    move(x, y, under) {
+      const to = this.node.isConnected ? this.node : under || document;
+      firePointer(to, "pointermove", x, y, { buttons: 1 });
+      fireMouse(to, "mousemove", x, y, { buttons: 1 });
+      if (!this.dataTransfer) return;
+      fireDrag(this.node, "drag", x, y, this.dataTransfer);
+      if (under !== this.over) {
+        if (this.over) fireDrag(this.over, "dragleave", x, y, this.dataTransfer);
+        if (under) fireDrag(under, "dragenter", x, y, this.dataTransfer);
+        this.over = under;
+      }
+      this.canDrop = under ? !fireDrag(under, "dragover", x, y, this.dataTransfer) : false;
+    }
+    /** Let go. Returns whether the element was dropped on something. */
+    end(x, y) {
+      const to = this.node.isConnected ? this.node : this.over || document;
+      firePointer(to, "pointerup", x, y, { buttons: 0, button: 0 });
+      fireMouse(to, "mouseup", x, y, { buttons: 0, button: 0 });
+      const dropped = Boolean(this.dataTransfer && this.over && this.canDrop);
+      if (this.dataTransfer) {
+        if (dropped) fireDrag(this.over, "drop", x, y, this.dataTransfer);
+        fireDrag(this.node, "dragend", x, y, this.dataTransfer);
+      }
+      return dropped;
+    }
+    /** The hand left the frame. Put everything down without dropping it. */
+    cancel(x, y) {
+      const to = this.node.isConnected ? this.node : document;
+      firePointer(to, "pointercancel", x, y, { buttons: 0 });
+      if (this.dataTransfer) {
+        if (this.over) fireDrag(this.over, "dragleave", x, y, this.dataTransfer);
+        fireDrag(this.node, "dragend", x, y, this.dataTransfer);
+      }
+    }
+  };
+
   // src/scroll.js
   var SCROLLABLE = /(auto|scroll|overlay)/;
   function scrollTargetFor(el) {
@@ -1333,26 +1508,6 @@ var HandCursor = (() => {
     }
     return el;
   }
-  function eventInit(x, y, extra) {
-    return {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      view: window,
-      clientX: x,
-      clientY: y,
-      screenX: (window.screenX || 0) + x,
-      screenY: (window.screenY || 0) + y,
-      ...extra
-    };
-  }
-  var POINTER = { pointerId: 1, pointerType: "touch", isPrimary: true, width: 1, height: 1 };
-  function firePointer(el, type, x, y, extra) {
-    el.dispatchEvent(new PointerEvent(type, eventInit(x, y, { ...POINTER, ...extra })));
-  }
-  function fireMouse(el, type, x, y, extra) {
-    el.dispatchEvent(new MouseEvent(type, eventInit(x, y, extra)));
-  }
   var TouchEmulator = class {
     /**
      * @param {object} options    resolved config
@@ -1360,10 +1515,11 @@ var HandCursor = (() => {
      * @param {OwnUi} [hooks.ui]  the trackpad's own chrome
      * @param {Function} [hooks.onTap]
      */
-    constructor(options, { ui, onTap, hover, debug } = {}) {
+    constructor(options, { ui, onTap, onGrab, hover, debug } = {}) {
       this.options = options;
       this.ui = ui;
       this.onTap = onTap;
+      this.onGrab = onGrab;
       this.hoverStyles = hover;
       this.hovered = null;
       this.pressing = false;
@@ -1372,6 +1528,9 @@ var HandCursor = (() => {
       this.last = null;
       this.samples = [];
       this.scrollTarget = null;
+      this.scrolled = false;
+      this.grabTarget = null;
+      this.grab = null;
       this.scroller = new ScrollRunner(options, debug);
     }
     /**
@@ -1427,6 +1586,9 @@ var HandCursor = (() => {
       this.origin = { x, y, t: now, el, internal };
       this.last = { x, y, t: now };
       this.samples = [{ x, y, t: now }];
+      const grab = this.options.grab;
+      this.grabTarget = grab.enabled && el && !internal ? grabbableFrom(el, grab) : null;
+      this.scrolled = false;
       this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
       this.scroller.setTarget(this.scrollTarget);
     }
@@ -1447,7 +1609,33 @@ var HandCursor = (() => {
         this.dragging = true;
         this.leaveHovered(x, y);
       }
+      if (this.grabTarget && !this.scrolled) {
+        if (this.grab || now - this.origin.t >= this.options.grab.holdDelay) {
+          this.dragElement(x, y);
+          return;
+        }
+      }
+      this.scrolled = true;
       this.scroller.push(dx, dy, now);
+    }
+    /**
+     * Carries an element along with the hand.
+     *
+     * The caller has already decided this gesture is a grab rather than a scroll.
+     */
+    dragElement(x, y) {
+      if (!this.grab) {
+        this.scroller.stop();
+        this.grab = new Grab(
+          this.grabTarget,
+          this.origin.x,
+          this.origin.y,
+          this.options.grab.html5
+        );
+        this.onGrab?.({ type: "start", target: this.grab.node, x, y });
+      }
+      const { el, internal } = this.resolve(x, y);
+      this.grab.move(x, y, internal ? null : el);
     }
     /**
      * How fast the hand was travelling as it let go, in CSS px per second.
@@ -1478,6 +1666,16 @@ var HandCursor = (() => {
       const origin = this.origin;
       this.pressing = false;
       this.origin = null;
+      if (this.grab) {
+        const grab = this.grab;
+        this.grab = null;
+        this.grabTarget = null;
+        this.dragging = false;
+        const dropped = grab.end(x, y);
+        this.onGrab?.({ type: "end", target: grab.node, dropped, x, y });
+        return;
+      }
+      this.grabTarget = null;
       if (this.dragging) {
         this.dragging = false;
         const velocity = this.releaseVelocity();
@@ -1517,6 +1715,12 @@ var HandCursor = (() => {
     /** The hand left the frame: drop everything without firing a tap. */
     cancel(x = 0, y = 0) {
       this.scroller.stop();
+      if (this.grab) {
+        this.grab.cancel(x, y);
+        this.onGrab?.({ type: "end", target: this.grab.node, dropped: false, x, y });
+        this.grab = null;
+      }
+      this.grabTarget = null;
       this.pressing = false;
       this.dragging = false;
       this.origin = null;
@@ -1694,7 +1898,8 @@ var HandCursor = (() => {
         ui,
         debug,
         hover: this.hoverStyles,
-        onTap: (detail) => this.emit("tap", detail)
+        onTap: (detail) => this.emit("tap", detail),
+        onGrab: ({ type, ...detail }) => this.emit(type === "start" ? "grab" : "drop", detail)
       });
       this.filter = new PointFilter(options.smoothing);
       this.position = null;
@@ -2119,6 +2324,18 @@ var HandCursor = (() => {
     }
     get pinching() {
       return this.driver.pinching;
+    }
+    /**
+     * What, if anything, a pinch on this element would pick up and why.
+     *
+     * Exposed because "the cursor scrolls my page instead of dragging my card" is
+     * answerable in one call, and guessing at it from the outside is not:
+     * `hc.grabbableFrom(document.querySelector('.card'))` returns the element
+     * that would be carried, or null. Pass a `grab.selector` if it comes back
+     * null for something a library does make draggable.
+     */
+    grabbableFrom(el) {
+      return el ? grabbableFrom(el, this.options.grab) : null;
     }
     applyStyleVariables() {
       const { margin, zIndex, grayscale } = this.options;

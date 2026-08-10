@@ -151,6 +151,59 @@ export const DEFAULTS = {
   },
 
   /**
+   * Picking an element up and carrying it, rather than scrolling the page under
+   * it.
+   *
+   * A page has no single way of saying "this can be dragged", so three are
+   * looked for: the `draggable` attribute, the CSS a drag library leaves behind
+   * on its handles, and whatever `selector` names.
+   */
+  grab: {
+    enabled: true,
+    /**
+     * Extra selector for handles a library sets up in JavaScript and does not
+     * advertise in the markup or the CSS.
+     */
+    selector: '[data-hc-grab]',
+    /**
+     * Computed cursors that mean "this moves". A page that draws `grab` or
+     * `move` under the pointer is telling the user it can be picked up, which
+     * makes it the most reliable signal there is.
+     */
+    cursors: [
+      'grab',
+      'grabbing',
+      'move',
+      'all-scroll',
+      'col-resize',
+      'row-resize',
+      'ew-resize',
+      'ns-resize',
+      'nesw-resize',
+      'nwse-resize',
+    ],
+    /**
+     * Treat `touch-action: none` as a drag handle. Libraries set it so the
+     * browser does not scroll while they drag, which makes it a good tell.
+     * Never applied to `body` or the document element, where it describes the
+     * whole page rather than a handle.
+     */
+    touchAction: true,
+    /** Synthesize the HTML5 dragstart/dragover/drop sequence for `draggable`. */
+    html5: true,
+    /**
+     * How long the pinch must be held before a drag on something draggable
+     * carries it rather than scrolling, in ms.
+     *
+     * 0 means it always carries it, which is what a mouse does. Raise it for a
+     * scrolling list of draggable cards: then a quick pinch-drag scrolls and
+     * only a held one picks a card up, the same way a touchscreen settles the
+     * conflict. 300 is a normal long-press.
+     */
+    holdDelay: 0,
+  },
+
+  /**
    * The playful bit: the arrow leans into the direction it travels, capped so
    * it sways rather than spins.
    */

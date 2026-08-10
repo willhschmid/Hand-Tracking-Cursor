@@ -20,6 +20,7 @@ corner, asks for the camera, and takes over from there.
 
 - [Install](#install)
 - [Gestures](#gestures)
+- [Dragging elements](#dragging-elements)
 - [Options](#options)
 - [JavaScript API](#javascript-api)
 - [Events](#events)
@@ -116,7 +117,8 @@ Module builds never auto-mount — call `init()` when you are ready.
 | --- | --- |
 | Open hand, move around | The cursor tracks across the viewport and leans up to 22° into its direction of travel |
 | Index finger meets thumb | Click. The skeleton turns green and the cursor scales down while held |
-| Pinch and drag up / down | Scrolls whatever is under the cursor — the page, or a single scrollable element — and flings on release |
+| Pinch and drag on something draggable | Picks it up and carries it — see [Dragging elements](#dragging-elements) |
+| Pinch and drag anywhere else | Scrolls whatever is under the cursor — the page, or a single scrollable element — and flings on release |
 | Hand leaves frame | The cursor fades out and any press is cancelled |
 | <kbd>Esc</kbd> | Turns the camera off |
 
@@ -140,6 +142,90 @@ many. Your own site's CSS is always readable. Turn it off with
 
 JavaScript hover listeners need none of this: `pointerover` / `mouseover` /
 `mousemove` are dispatched as the cursor travels.
+
+---
+
+## Dragging elements
+
+A pinch-drag that starts on something draggable carries it instead of scrolling
+the page underneath it. Nothing needs adding to the page for the common cases.
+
+There is no single way a page says "this can be dragged", so three are looked
+for, in this order:
+
+| Signal | Covers |
+| --- | --- |
+| `draggable="true"` | HTML5 drag and drop |
+| `cursor: grab` / `move` / `col-resize` and friends | Anything that tells the user it moves |
+| `touch-action: none` | Drag libraries, which set it so the browser does not scroll while they drag |
+| `grab.selector` | Whatever the other three miss |
+
+The pointer events sent are the same ones a touchscreen produces —
+`pointerdown`, a stream of `pointermove`, `pointerup`, each with its mouse-event
+twin — so a library that already works on a phone works here without knowing
+anything about hand tracking. dnd-kit, Sortable, interact.js and hand-rolled
+`mousedown` handlers all fall into this group.
+
+`draggable="true"` is different: the browser only produces the HTML5 sequence
+for real drags, so it is synthesized separately —  `dragstart`, `dragenter` /
+`dragover` / `dragleave` as the cursor crosses targets, then `drop` and
+`dragend`. A zone accepts the drop the normal way, by cancelling `dragover`; if
+nothing accepts it, `dragend` fires without a `drop`, exactly as a mouse drag
+would behave.
+
+The `pointerdown` opens at the point the pinch closed rather than the point the
+drag was recognised, so a library measuring from its own `pointerdown` holds the
+element where you actually grabbed it. The element then jumps forward by
+`drag.threshold` on the first move — the same thing a touchscreen does with an
+activation distance.
+
+### Why isn't my element draggable?
+
+Ask directly:
+
+```js
+HandCursor.instance().grabbableFrom(document.querySelector('.card'));
+// → { node: div.card, html5: false }   or   null
+```
+
+If it comes back `null` for something a library does make draggable, name it:
+
+```js
+HandCursor.init({ grab: { selector: '.card, [data-rbd-drag-handle-draggable-id]' } });
+```
+
+### A scrolling list of draggable cards
+
+These two wants conflict, and the conflict is real rather than a bug: a
+pinch-drag starting on a card either moves the card or scrolls the list, and it
+cannot do both. By default the card wins, which is what a mouse does.
+
+If the list needs to scroll by hand as well, require a hold:
+
+```js
+HandCursor.init({ grab: { holdDelay: 300 } });
+```
+
+Then a quick pinch-drag scrolls and only a held one picks a card up — the same
+way a touchscreen settles it. Whichever starts first keeps the gesture.
+
+### What this cannot do
+
+Synthesized events are untrusted, and two things on the web only respond to real
+ones. Browser chrome is the first: an iOS URL bar will not collapse for a
+synthetic scroll. UA-implemented widget internals are the second, so the thumb
+of a native `<input type="range">` will not move — a slider a page draws itself
+will.
+
+Dragging past the edge of the viewport does not auto-scroll the page, so a drop
+target has to be on screen when you start.
+
+### Events
+
+```js
+document.addEventListener('handcursor:grab', (e) => e.detail.target);
+document.addEventListener('handcursor:drop', (e) => e.detail.dropped);
+```
 
 ---
 
@@ -200,6 +286,16 @@ HandCursor.init({
     friction: 0.967,         // fling decay, per 60fps frame, applied over real time
     minVelocity: 24,         // px/s — below this a fling stops
     maxVelocity: 3600,       // px/s
+  },
+
+  // Picking an element up rather than scrolling the page under it.
+  grab: {
+    enabled: true,
+    selector: '[data-hc-grab]',   // extra handles a library does not advertise
+    cursors: ['grab', 'move', …], // computed cursors that mean "this moves"
+    touchAction: true,            // treat touch-action:none as a handle
+    html5: true,                  // synthesize dragstart/dragover/drop too
+    holdDelay: 0,                 // ms to hold before grabbing; see above
   },
 
   rotation: {
@@ -264,6 +360,8 @@ All events fire on `document` and carry the instance in `detail.instance`.
 | `handcursor:press` | `x`, `y` |
 | `handcursor:release` | `x`, `y` |
 | `handcursor:tap` | `x`, `y`, `target`, `internal` |
+| `handcursor:grab` | `x`, `y`, `target` — an element has been picked up |
+| `handcursor:drop` | `x`, `y`, `target`, `dropped` — and put down again |
 | `handcursor:minimize` / `handcursor:expand` | — |
 | `handcursor:error` | `error`, `message` |
 

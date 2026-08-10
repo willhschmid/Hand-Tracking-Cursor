@@ -1,3 +1,5 @@
+import { eventInit, fireMouse, firePointer } from './events.js';
+import { Grab, grabbableFrom } from './grab.js';
 import { ScrollRunner, scrollTargetFor } from './scroll.js';
 
 /**
@@ -23,30 +25,6 @@ export function deepElementFromPoint(x, y) {
   return el;
 }
 
-function eventInit(x, y, extra) {
-  return {
-    bubbles: true,
-    cancelable: true,
-    composed: true,
-    view: window,
-    clientX: x,
-    clientY: y,
-    screenX: (window.screenX || 0) + x,
-    screenY: (window.screenY || 0) + y,
-    ...extra,
-  };
-}
-
-const POINTER = { pointerId: 1, pointerType: 'touch', isPrimary: true, width: 1, height: 1 };
-
-function firePointer(el, type, x, y, extra) {
-  el.dispatchEvent(new PointerEvent(type, eventInit(x, y, { ...POINTER, ...extra })));
-}
-
-function fireMouse(el, type, x, y, extra) {
-  el.dispatchEvent(new MouseEvent(type, eventInit(x, y, extra)));
-}
-
 /**
  * The trackpad's own chrome, which must never receive synthesized page events.
  * Two implementations exist: the script-tag build points it at its shadow root,
@@ -65,10 +43,11 @@ export class TouchEmulator {
    * @param {OwnUi} [hooks.ui]  the trackpad's own chrome
    * @param {Function} [hooks.onTap]
    */
-  constructor(options, { ui, onTap, hover, debug } = {}) {
+  constructor(options, { ui, onTap, onGrab, hover, debug } = {}) {
     this.options = options;
     this.ui = ui;
     this.onTap = onTap;
+    this.onGrab = onGrab;
     this.hoverStyles = hover;
 
     this.hovered = null;
@@ -78,6 +57,11 @@ export class TouchEmulator {
     this.last = null;
     this.samples = [];
     this.scrollTarget = null;
+    this.scrolled = false;
+    // What the press landed on that could be picked up, and the drag of it once
+    // one has started.
+    this.grabTarget = null;
+    this.grab = null;
     this.scroller = new ScrollRunner(options, debug);
   }
 
@@ -140,6 +124,10 @@ export class TouchEmulator {
     this.origin = { x, y, t: now, el, internal };
     this.last = { x, y, t: now };
     this.samples = [{ x, y, t: now }];
+
+    const grab = this.options.grab;
+    this.grabTarget = grab.enabled && el && !internal ? grabbableFrom(el, grab) : null;
+    this.scrolled = false;
     this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
     this.scroller.setTarget(this.scrollTarget);
   }
@@ -177,11 +165,48 @@ export class TouchEmulator {
       // the content would lurch by `threshold` px the instant a drag begins.
     }
 
+    // A gesture is either carrying an element or scrolling, never both, and
+    // whichever starts first keeps the gesture. With `grab.holdDelay` at 0 the
+    // grab always wins, because it is decided on the same frame the drag is.
+    if (this.grabTarget && !this.scrolled) {
+      if (this.grab || now - this.origin.t >= this.options.grab.holdDelay) {
+        this.dragElement(x, y);
+        return;
+      }
+      // Still inside the hold. Fall through and scroll; once that has started
+      // the gesture is a scroll for good.
+    }
+
     // Hand off to the display-rate runner rather than scrolling here: this
     // method is called at whatever rate the model manages, which is not the
     // rate the screen repaints. `now` goes with it, so the runner times the
     // path by when the hand was seen rather than when this happened to run.
+    this.scrolled = true;
     this.scroller.push(dx, dy, now);
+  }
+
+  /**
+   * Carries an element along with the hand.
+   *
+   * The caller has already decided this gesture is a grab rather than a scroll.
+   */
+  dragElement(x, y) {
+    if (!this.grab) {
+      // The scroll runner was handed a target on press and suppressed the
+      // page's smooth scrolling with it. Nothing is going to scroll now, so it
+      // has to be told, or that override stays on the page.
+      this.scroller.stop();
+      this.grab = new Grab(
+        this.grabTarget,
+        this.origin.x,
+        this.origin.y,
+        this.options.grab.html5,
+      );
+      this.onGrab?.({ type: 'start', target: this.grab.node, x, y });
+    }
+
+    const { el, internal } = this.resolve(x, y);
+    this.grab.move(x, y, internal ? null : el);
   }
 
   /**
@@ -216,6 +241,17 @@ export class TouchEmulator {
     const origin = this.origin;
     this.pressing = false;
     this.origin = null;
+
+    if (this.grab) {
+      const grab = this.grab;
+      this.grab = null;
+      this.grabTarget = null;
+      this.dragging = false;
+      const dropped = grab.end(x, y);
+      this.onGrab?.({ type: 'end', target: grab.node, dropped, x, y });
+      return;
+    }
+    this.grabTarget = null;
 
     if (this.dragging) {
       this.dragging = false;
@@ -269,6 +305,12 @@ export class TouchEmulator {
   /** The hand left the frame: drop everything without firing a tap. */
   cancel(x = 0, y = 0) {
     this.scroller.stop();
+    if (this.grab) {
+      this.grab.cancel(x, y);
+      this.onGrab?.({ type: 'end', target: this.grab.node, dropped: false, x, y });
+      this.grab = null;
+    }
+    this.grabTarget = null;
     this.pressing = false;
     this.dragging = false;
     this.origin = null;

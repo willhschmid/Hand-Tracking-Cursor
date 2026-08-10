@@ -3,6 +3,7 @@ import { CSS } from './styles.js';
 import { FONT_URL } from './tokens.js';
 import { Panel } from './panel.js';
 import { CursorDriver } from './driver.js';
+import { grabbableFrom } from './grab.js';
 import { DebugOverlay } from './debug.js';
 import { closeCamera, loadModel, openCamera } from './hand-model.js';
 
@@ -65,6 +66,19 @@ export class HandCursorController {
 
   get pinching() {
     return this.driver.pinching;
+  }
+
+  /**
+   * What, if anything, a pinch on this element would pick up and why.
+   *
+   * Exposed because "the cursor scrolls my page instead of dragging my card" is
+   * answerable in one call, and guessing at it from the outside is not:
+   * `hc.grabbableFrom(document.querySelector('.card'))` returns the element
+   * that would be carried, or null. Pass a `grab.selector` if it comes back
+   * null for something a library does make draggable.
+   */
+  grabbableFrom(el) {
+    return el ? grabbableFrom(el, this.options.grab) : null;
   }
 
   applyStyleVariables() {

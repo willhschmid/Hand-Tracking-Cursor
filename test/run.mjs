@@ -524,7 +524,7 @@ for (const lenis of [false, true]) {
   check(
     `${label}: a 15fps tracker does not lurch`,
     slow.biggestJump < 20,
-    `biggest single-repaint jump ${slow.biggestJump}px — ${JSON.stringify(slow)}`,
+    `fastest repaint moved ${slow.biggestJump}px per frame — ${JSON.stringify(slow)}`,
   );
   check(
     `${label}: slow tracking is nearly as smooth as fast`,
@@ -602,6 +602,189 @@ for (const lenis of [false, true]) {
     "the page's own smooth scrolling is restored afterwards",
     afterwards === 'smooth',
     `left as ${afterwards}`,
+  );
+}
+
+// ------------------------------------------------------ dragging elements --
+//
+// A page has no single way of saying "this can be dragged", so there is one
+// fixture for each of the three that exist: the `draggable` attribute, a
+// library-style handle wearing nothing but `cursor: grab` and
+// `touch-action: none`, and a plain div that is neither.
+
+{
+  // These fixtures sit near the bottom of a 3000px page, several off-screen at
+  // the top, so each has to be scrolled into view before it can be aimed at.
+  const at = (id) => page.evaluate((sel) => window.spot(sel), id);
+
+  // --- the library kind: pointer events, translated by the delta since down --
+  const handle = await at('handle');
+  const dragged = await page.evaluate(async (from) => {
+    const before = window.scrollY;
+    await window.pinchDrag({ x: from.x, y: from.y, dx: 120, dy: 40 });
+    await new Promise((r) => setTimeout(r, 200));
+    const el = document.getElementById('handle');
+    const m = new DOMMatrix(getComputedStyle(el).transform);
+    return { moved: [Math.round(m.e), Math.round(m.f)], scrolled: window.scrollY - before };
+  }, handle);
+  check(
+    'a pinch-drag carries an element a library made draggable',
+    dragged.moved[0] > 80 && dragged.moved[1] > 20,
+    `moved ${JSON.stringify(dragged.moved)}, expected about [120, 40]`,
+  );
+  check(
+    'carrying an element does not scroll the page underneath it',
+    dragged.scrolled === 0,
+    `page scrolled ${dragged.scrolled}px`,
+  );
+
+  // --- the HTML5 kind: its own event sequence, which no pointer event implies --
+  // Both read after a single scroll: measuring the second one separately would
+  // scroll the page again and leave the first set of coordinates pointing
+  // somewhere else.
+  const { card, zone } = await page.evaluate(async () => {
+    await window.spot('card');
+    const box = (id) => {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    };
+    return { card: box('card'), zone: box('dropzone') };
+  });
+  const html5 = await page.evaluate(async ([from, to]) => {
+    window.dragLog = [];
+    document.getElementById('handle').style.transform = '';
+    await window.pinchDrag({
+      x: from.x,
+      y: from.y,
+      dx: to.x - from.x,
+      dy: to.y - from.y,
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    return window.dragLog;
+  }, [card, zone]);
+  check(
+    'an HTML5 draggable gets the full drag sequence',
+    html5[0] === 'dragstart' &&
+      html5.includes('dragenter') &&
+      html5.includes('dragover') &&
+      html5.at(-1) === 'dragend',
+    JSON.stringify(html5),
+  );
+  check(
+    'dropping on a zone that accepts it fires drop, before dragend',
+    html5.includes('drop') && html5.indexOf('drop') === html5.length - 2,
+    JSON.stringify(html5),
+  );
+
+  // --- and a plain element still scrolls, which is the thing not to break ----
+  const plain = await at('plain');
+  const stillScrolls = await page.evaluate(async (from) => {
+    const before = window.scrollY;
+    await window.pinchDrag({ x: from.x, y: from.y, dy: -160 });
+    await new Promise((r) => setTimeout(r, 400));
+    return window.scrollY - before;
+  }, plain);
+  check(
+    'a drag on something not draggable still scrolls the page',
+    stillScrolls > 80,
+    `scrolled ${Math.round(stillScrolls)}px`,
+  );
+
+  // --- a tap on a draggable is still a tap, not a one-pixel drag ------------
+  const cardAgain = await at('card');
+  const tapped = await page.evaluate(async (from) => {
+    window.dragLog = [];
+    let clicked = 0;
+    const card = document.getElementById('card');
+    const count = () => { clicked += 1; };
+    card.addEventListener('click', count);
+    for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
+    window.feedNow(...window.toCamera(from.x, from.y), true);
+    await new Promise((r) => setTimeout(r, 60));
+    window.feedNow(...window.toCamera(from.x, from.y), false);
+    await new Promise((r) => setTimeout(r, 100));
+    card.removeEventListener('click', count);
+    return { clicked, log: window.dragLog };
+  }, cardAgain);
+  check(
+    'a tap on a draggable element still clicks it',
+    tapped.clicked === 1 && tapped.log.length === 0,
+    JSON.stringify(tapped),
+  );
+
+  // --- each CSS signal has to stand on its own ------------------------------
+  const signals = await page.evaluate(() => {
+    const make = (css) => {
+      const el = document.createElement('div');
+      el.style.cssText = `width:60px;height:60px;${css}`;
+      document.getElementById('page').appendChild(el);
+      const found = window.hc.grabbableFrom(el);
+      el.remove();
+      return found ? found.node === el : false;
+    };
+    return {
+      touchAction: make('touch-action:none'),
+      cursor: make('cursor:grab'),
+      resize: make('cursor:col-resize'),
+      neither: make('background:#eee'),
+    };
+  });
+  check(
+    'touch-action, a grab cursor and a resize cursor each mark a handle',
+    signals.touchAction && signals.cursor && signals.resize,
+    JSON.stringify(signals),
+  );
+  check('a plain element is not a handle', signals.neither === false);
+
+  // --- the long-press mode, for a scrolling list of draggable cards ---------
+  const longPress = await page.evaluate(async () => {
+    const el = document.getElementById('handle');
+    const settle = () => new Promise((r) => setTimeout(r, 400));
+    const offset = () => Math.round(new DOMMatrix(getComputedStyle(el).transform).f);
+
+    window.hc.options.grab.holdDelay = 300;
+    el.style.transform = '';
+    let from = await window.spot('handle');
+    let before = window.scrollY;
+    await window.pinchDrag({ x: from.x, y: from.y, dy: -160 });
+    await settle();
+    const quick = { moved: offset(), scrolled: window.scrollY - before };
+
+    el.style.transform = '';
+    from = await window.spot('handle');
+    before = window.scrollY;
+    await window.pinchDrag({ x: from.x, y: from.y, dy: -160, holdMs: 380 });
+    await settle();
+    const held = { moved: offset(), scrolled: window.scrollY - before };
+
+    window.hc.options.grab.holdDelay = 0;
+    el.style.transform = '';
+    return { quick, held };
+  });
+  check(
+    'with a hold required, a quick drag scrolls instead of grabbing',
+    longPress.quick.scrolled > 80 && longPress.quick.moved === 0,
+    JSON.stringify(longPress.quick),
+  );
+  check(
+    'with a hold required, a held drag grabs instead of scrolling',
+    longPress.held.moved < -80 && longPress.held.scrolled === 0,
+    JSON.stringify(longPress.held),
+  );
+
+  // --- the CSS heuristics must not swallow the whole page -------------------
+  const rootSafe = await page.evaluate(() => {
+    document.body.style.touchAction = 'none';
+    document.body.style.cursor = 'move';
+    const found = window.hc.grabbableFrom(document.getElementById('plain'));
+    document.body.style.touchAction = '';
+    document.body.style.cursor = '';
+    return found;
+  });
+  check(
+    'touch-action and cursor on body are not treated as a drag handle',
+    rootSafe === null,
+    `matched ${JSON.stringify(rootSafe)}`,
   );
 }
 
