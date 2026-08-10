@@ -95,16 +95,12 @@ function snap(value) {
   return Math.round(value * dpr) / dpr;
 }
 
-/** Moves a scroll container by a delta expressed as cursor movement. */
-function applyScroll({ node, canX, canY }, dx, dy) {
-  const top = snap(node.scrollTop - (canY ? dy : 0));
-  const left = snap(node.scrollLeft - (canX ? dx : 0));
-  try {
-    node.scrollTo({ top, left, behavior: 'instant' });
-  } catch {
-    node.scrollTop = top;
-    node.scrollLeft = left;
-  }
+/** How far a container can be scrolled, in each axis. */
+function scrollRange(node) {
+  return {
+    x: Math.max(0, node.scrollWidth - node.clientWidth),
+    y: Math.max(0, node.scrollHeight - node.clientHeight),
+  };
 }
 
 /**
@@ -128,11 +124,17 @@ function throwDistance(velocity, friction, scale) {
 }
 
 /**
- * How much of a frame's own elapsed time the render head may spend correcting
- * its position in the hand's path. 5% is far too little to see and still
- * converges within a second.
+ * How the render head is allowed to correct its position in the hand's path.
+ *
+ * The cap is a share of the frame's own elapsed time, so a correction can never
+ * be more than a few percent of a step. The gain tapers it: correcting at the
+ * full rate right up to the moment the error clears and then stopping dead is a
+ * 5% speed change on one frame, which is small but abrupt, and abrupt is what
+ * the eye picks up. Easing out of the correction spreads it over many frames
+ * instead.
  */
-const HEAD_DRIFT = 0.05;
+const HEAD_CAP = 0.05;
+const HEAD_GAIN = 0.15;
 
 export class ScrollRunner {
   constructor(options, debug) {
@@ -153,6 +155,10 @@ export class ScrollRunner {
     // currently being drawn — a clock of its own, trailing real time.
     this.interval = 0;
     this.head = 0;
+    // The scroll offset this gesture believes it has reached. Tracked rather
+    // than read back — see claimPosition.
+    this.positionX = 0;
+    this.positionY = 0;
     // True while the hand is still feeding the path, which is the only time it
     // makes sense to guess at where the next landmark will be.
     this.live = false;
@@ -188,6 +194,7 @@ export class ScrollRunner {
     this.target = target;
     if (!target) return;
 
+    this.claimPosition();
     this.debug?.recordTarget(target.node, usesSmoothScroll(target.node));
     this.debug?.beginTrace(target.node);
     this.lastRetargetAt = 0;
@@ -201,6 +208,61 @@ export class ScrollRunner {
   releaseBehavior() {
     this.restoreBehavior?.();
     this.restoreBehavior = null;
+  }
+
+  /**
+   * Takes ownership of the container's scroll position for the gesture.
+   *
+   * From here until the gesture ends the runner writes absolute offsets it
+   * tracks itself, and never reads the container's back.
+   *
+   * That is not a micro-optimisation. On iOS the page's scroll offset lives in
+   * the UI process, not this one: a write is a message that commits a moment
+   * later, and a read taken straight afterwards can still return the old value.
+   * `scrollTop = scrollTop - delta` every frame is then a read-modify-write
+   * loop against a value that has not caught up — the frame reads a stale
+   * offset, computes the same target it already asked for, and the page does
+   * not move. The frame after reads a fresh one and moves twice as far. Dead
+   * frame, double step, dead frame: the page skips while the cursor, a
+   * composited transform that never round-trips anywhere, glides.
+   *
+   * It also explains what is smooth. A nested `overflow: auto` element keeps
+   * its offset in this process, so reading it back is exact and this loop
+   * never misbehaves — which is why a modal's inner scroller stays smooth on
+   * the same phone that skips on the page itself.
+   */
+  claimPosition() {
+    if (!this.target) return;
+    this.positionX = this.target.node.scrollLeft;
+    this.positionY = this.target.node.scrollTop;
+  }
+
+  /**
+   * Writes the position the gesture has arrived at, moved by (dx, dy) of cursor
+   * travel.
+   *
+   * The intended position is clamped to the container's own range rather than
+   * left to the browser to clamp, so dragging past the end cannot run the
+   * tracked value off into space and leave the page unresponsive on the way
+   * back.
+   */
+  applyScroll(dx, dy) {
+    const { node, canX, canY } = this.target;
+    const range = scrollRange(node);
+    if (canY) this.positionY = Math.max(0, Math.min(range.y, this.positionY - dy));
+    if (canX) this.positionX = Math.max(0, Math.min(range.x, this.positionX - dx));
+    const top = snap(this.positionY);
+    const left = snap(this.positionX);
+    try {
+      node.scrollTo({ top, left, behavior: 'instant' });
+    } catch {
+      node.scrollTop = top;
+      node.scrollLeft = left;
+    }
+    // Reading the offset back is the very thing this avoids doing, so it only
+    // happens with the diagnostics panel open — where the point is to show how
+    // far behind the platform's answer is.
+    if (this.debug) this.debug.recordCommit(top, canY ? node.scrollTop : node.scrollLeft);
   }
 
   /**
@@ -308,8 +370,8 @@ export class ScrollRunner {
       return this.head;
     }
     this.head += elapsed;
-    const limit = elapsed * HEAD_DRIFT;
-    const drift = ideal - this.head;
+    const limit = elapsed * HEAD_CAP;
+    const drift = (ideal - this.head) * HEAD_GAIN;
     this.head += Math.max(-limit, Math.min(limit, drift));
     return this.head;
   }
@@ -365,8 +427,15 @@ export class ScrollRunner {
     this.lastRetargetAt = now;
 
     const { node, canX, canY } = this.target;
-    const top = snap(node.scrollTop - (canY ? this.remainingY : 0));
-    const left = snap(node.scrollLeft - (canX ? this.remainingX : 0));
+    const range = scrollRange(node);
+    if (canY) {
+      this.positionY = Math.max(0, Math.min(range.y, this.positionY - this.remainingY));
+    }
+    if (canX) {
+      this.positionX = Math.max(0, Math.min(range.x, this.positionX - this.remainingX));
+    }
+    const top = snap(this.positionY);
+    const left = snap(this.positionX);
     try {
       node.scrollTo({ top, left, behavior });
     } catch {
@@ -500,7 +569,7 @@ export class ScrollRunner {
     }
 
     if (dx || dy) {
-      applyScroll(this.target, dx, dy);
+      this.applyScroll(dx, dy);
       this.debug?.recordScroll(dy || dx);
     }
 

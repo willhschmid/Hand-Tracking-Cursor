@@ -52,6 +52,12 @@ const ROWS = [
   ['worst', 'longest gap between repaints'],
   ['blocked', 'share of repaints later than 32ms'],
   ['scroll', 'scroll writes per second, and mean step'],
+  [
+    'commit',
+    'how far the browser\u2019s reported scroll offset trails what was just ' +
+      'written, and how often it had not moved at all. Anything but 0 means ' +
+      'this platform commits scrolls asynchronously',
+  ],
   ['target', 'what is being scrolled, and whether its CSS asked for smooth'],
 ];
 
@@ -60,6 +66,10 @@ export class DebugOverlay {
     this.inference = new Rolling();
     this.frameGaps = new Rolling();
     this.scrollSteps = new Rolling();
+    this.commitLag = new Rolling();
+    this.staleReads = 0;
+    this.commitReads = 0;
+    this.lastReported = null;
 
     this.paintCount = 0;
     this.trackCount = 0;
@@ -123,6 +133,25 @@ export class DebugOverlay {
   recordScroll(step) {
     this.scrollCount += 1;
     this.scrollSteps.push(Math.abs(step));
+  }
+
+  /**
+   * What the container reported back immediately after being written to.
+   *
+   * On a platform that commits scrolls asynchronously — iOS, where the page's
+   * offset lives in another process — this trails the written value, and any
+   * code that reads the offset back to compute the next one will stutter. The
+   * runner does not do that, but the number is worth showing: it is the
+   * difference between a page that skips and one that does not, and it can
+   * only be measured on the device itself.
+   */
+  recordCommit(written, reported) {
+    this.commitReads += 1;
+    this.commitLag.push(Math.abs(written - reported));
+    if (this.lastReported !== null && reported === this.lastReported) {
+      this.staleReads += 1;
+    }
+    this.lastReported = reported;
   }
 
   /**
@@ -206,6 +235,14 @@ export class DebugOverlay {
         ? `${perSecond(this.scrollCount)}/s ${this.scrollSteps.mean.toFixed(1)}px`
         : '—',
     );
+    const stale = this.commitReads ? (this.staleReads / this.commitReads) * 100 : 0;
+    this.set(
+      'commit',
+      this.commitReads
+        ? `${this.commitLag.mean.toFixed(1)}px lag, ${stale.toFixed(0)}% stale`
+        : '—',
+      this.commitLag.mean > 1,
+    );
     this.set('target', this.targetLabel || '—', Boolean(this.targetSmooth));
 
     if (this.trace.length) {
@@ -220,6 +257,8 @@ export class DebugOverlay {
     this.trackCount = 0;
     this.scrollCount = 0;
     this.blockedCount = 0;
+    this.staleReads = 0;
+    this.commitReads = 0;
     this.lastReportAt = now;
   }
 

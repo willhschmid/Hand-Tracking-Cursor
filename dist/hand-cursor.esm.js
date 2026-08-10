@@ -924,15 +924,11 @@ function snap(value) {
   const dpr = window.devicePixelRatio || 1;
   return Math.round(value * dpr) / dpr;
 }
-function applyScroll({ node, canX, canY }, dx, dy) {
-  const top = snap(node.scrollTop - (canY ? dy : 0));
-  const left = snap(node.scrollLeft - (canX ? dx : 0));
-  try {
-    node.scrollTo({ top, left, behavior: "instant" });
-  } catch {
-    node.scrollTop = top;
-    node.scrollLeft = left;
-  }
+function scrollRange(node) {
+  return {
+    x: Math.max(0, node.scrollWidth - node.clientWidth),
+    y: Math.max(0, node.scrollHeight - node.clientHeight)
+  };
 }
 function decayTau(friction) {
   return -1 / (60 * Math.log(friction));
@@ -940,7 +936,8 @@ function decayTau(friction) {
 function throwDistance(velocity, friction, scale) {
   return velocity * decayTau(friction) * scale;
 }
-var HEAD_DRIFT = 0.05;
+var HEAD_CAP = 0.05;
+var HEAD_GAIN = 0.15;
 var ScrollRunner = class {
   constructor(options, debug) {
     this.options = options;
@@ -953,6 +950,8 @@ var ScrollRunner = class {
     this.path = [];
     this.interval = 0;
     this.head = 0;
+    this.positionX = 0;
+    this.positionY = 0;
     this.live = false;
     this.velocityX = 0;
     this.velocityY = 0;
@@ -981,6 +980,7 @@ var ScrollRunner = class {
     }
     this.target = target;
     if (!target) return;
+    this.claimPosition();
     this.debug?.recordTarget(target.node, usesSmoothScroll(target.node));
     this.debug?.beginTrace(target.node);
     this.lastRetargetAt = 0;
@@ -991,6 +991,56 @@ var ScrollRunner = class {
   releaseBehavior() {
     this.restoreBehavior?.();
     this.restoreBehavior = null;
+  }
+  /**
+   * Takes ownership of the container's scroll position for the gesture.
+   *
+   * From here until the gesture ends the runner writes absolute offsets it
+   * tracks itself, and never reads the container's back.
+   *
+   * That is not a micro-optimisation. On iOS the page's scroll offset lives in
+   * the UI process, not this one: a write is a message that commits a moment
+   * later, and a read taken straight afterwards can still return the old value.
+   * `scrollTop = scrollTop - delta` every frame is then a read-modify-write
+   * loop against a value that has not caught up — the frame reads a stale
+   * offset, computes the same target it already asked for, and the page does
+   * not move. The frame after reads a fresh one and moves twice as far. Dead
+   * frame, double step, dead frame: the page skips while the cursor, a
+   * composited transform that never round-trips anywhere, glides.
+   *
+   * It also explains what is smooth. A nested `overflow: auto` element keeps
+   * its offset in this process, so reading it back is exact and this loop
+   * never misbehaves — which is why a modal's inner scroller stays smooth on
+   * the same phone that skips on the page itself.
+   */
+  claimPosition() {
+    if (!this.target) return;
+    this.positionX = this.target.node.scrollLeft;
+    this.positionY = this.target.node.scrollTop;
+  }
+  /**
+   * Writes the position the gesture has arrived at, moved by (dx, dy) of cursor
+   * travel.
+   *
+   * The intended position is clamped to the container's own range rather than
+   * left to the browser to clamp, so dragging past the end cannot run the
+   * tracked value off into space and leave the page unresponsive on the way
+   * back.
+   */
+  applyScroll(dx, dy) {
+    const { node, canX, canY } = this.target;
+    const range = scrollRange(node);
+    if (canY) this.positionY = Math.max(0, Math.min(range.y, this.positionY - dy));
+    if (canX) this.positionX = Math.max(0, Math.min(range.x, this.positionX - dx));
+    const top = snap(this.positionY);
+    const left = snap(this.positionX);
+    try {
+      node.scrollTo({ top, left, behavior: "instant" });
+    } catch {
+      node.scrollTop = top;
+      node.scrollLeft = left;
+    }
+    if (this.debug) this.debug.recordCommit(top, canY ? node.scrollTop : node.scrollLeft);
   }
   /**
    * The hand moved. Records where it now wants the page.
@@ -1078,8 +1128,8 @@ var ScrollRunner = class {
       return this.head;
     }
     this.head += elapsed;
-    const limit = elapsed * HEAD_DRIFT;
-    const drift = ideal - this.head;
+    const limit = elapsed * HEAD_CAP;
+    const drift = (ideal - this.head) * HEAD_GAIN;
     this.head += Math.max(-limit, Math.min(limit, drift));
     return this.head;
   }
@@ -1125,8 +1175,15 @@ var ScrollRunner = class {
     if (!force && now - this.lastRetargetAt < retargetMs) return true;
     this.lastRetargetAt = now;
     const { node, canX, canY } = this.target;
-    const top = snap(node.scrollTop - (canY ? this.remainingY : 0));
-    const left = snap(node.scrollLeft - (canX ? this.remainingX : 0));
+    const range = scrollRange(node);
+    if (canY) {
+      this.positionY = Math.max(0, Math.min(range.y, this.positionY - this.remainingY));
+    }
+    if (canX) {
+      this.positionX = Math.max(0, Math.min(range.x, this.positionX - this.remainingX));
+    }
+    const top = snap(this.positionY);
+    const left = snap(this.positionX);
     try {
       node.scrollTo({ top, left, behavior });
     } catch {
@@ -1217,7 +1274,7 @@ var ScrollRunner = class {
       this.appliedY = at.y;
     }
     if (dx || dy) {
-      applyScroll(this.target, dx, dy);
+      this.applyScroll(dx, dy);
       this.debug?.recordScroll(dy || dx);
     }
     const settled = Math.abs(this.remainingX) < 1e-3 && Math.abs(this.remainingY) < 1e-3;
@@ -1735,6 +1792,10 @@ var ROWS = [
   ["worst", "longest gap between repaints"],
   ["blocked", "share of repaints later than 32ms"],
   ["scroll", "scroll writes per second, and mean step"],
+  [
+    "commit",
+    "how far the browser\u2019s reported scroll offset trails what was just written, and how often it had not moved at all. Anything but 0 means this platform commits scrolls asynchronously"
+  ],
   ["target", "what is being scrolled, and whether its CSS asked for smooth"]
 ];
 var DebugOverlay = class {
@@ -1742,6 +1803,10 @@ var DebugOverlay = class {
     this.inference = new Rolling();
     this.frameGaps = new Rolling();
     this.scrollSteps = new Rolling();
+    this.commitLag = new Rolling();
+    this.staleReads = 0;
+    this.commitReads = 0;
+    this.lastReported = null;
     this.paintCount = 0;
     this.trackCount = 0;
     this.scrollCount = 0;
@@ -1788,6 +1853,24 @@ var DebugOverlay = class {
   recordScroll(step) {
     this.scrollCount += 1;
     this.scrollSteps.push(Math.abs(step));
+  }
+  /**
+   * What the container reported back immediately after being written to.
+   *
+   * On a platform that commits scrolls asynchronously — iOS, where the page's
+   * offset lives in another process — this trails the written value, and any
+   * code that reads the offset back to compute the next one will stutter. The
+   * runner does not do that, but the number is worth showing: it is the
+   * difference between a page that skips and one that does not, and it can
+   * only be measured on the device itself.
+   */
+  recordCommit(written, reported) {
+    this.commitReads += 1;
+    this.commitLag.push(Math.abs(written - reported));
+    if (this.lastReported !== null && reported === this.lastReported) {
+      this.staleReads += 1;
+    }
+    this.lastReported = reported;
   }
   /**
    * Which element is being scrolled, and whether its stylesheet asked for
@@ -1853,6 +1936,12 @@ var DebugOverlay = class {
       "scroll",
       this.scrollCount ? `${perSecond(this.scrollCount)}/s ${this.scrollSteps.mean.toFixed(1)}px` : "\u2014"
     );
+    const stale = this.commitReads ? this.staleReads / this.commitReads * 100 : 0;
+    this.set(
+      "commit",
+      this.commitReads ? `${this.commitLag.mean.toFixed(1)}px lag, ${stale.toFixed(0)}% stale` : "\u2014",
+      this.commitLag.mean > 1
+    );
     this.set("target", this.targetLabel || "\u2014", Boolean(this.targetSmooth));
     if (this.trace.length) {
       const first = this.trace.findIndex((d) => d !== 0);
@@ -1864,6 +1953,8 @@ var DebugOverlay = class {
     this.trackCount = 0;
     this.scrollCount = 0;
     this.blockedCount = 0;
+    this.staleReads = 0;
+    this.commitReads = 0;
     this.lastReportAt = now;
   }
   set(key, value, warn = false) {

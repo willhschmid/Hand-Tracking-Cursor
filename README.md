@@ -405,6 +405,42 @@ after the fingers start parting; reading only the last frame would throw away
 most of a flick. Widen it if throws feel weaker than the gesture, narrow it if
 the page keeps coasting after you have visibly stopped.
 
+### If the page skips but an inner scroller does not
+
+The tell: on the same phone, a modal's `overflow: auto` element scrolls
+perfectly while the page underneath skips — and on desktop both are fine.
+
+On iOS the page's scroll offset lives in the UI process, not the one running
+JavaScript. A write is a message that commits a moment later, and a read taken
+straight afterwards can still return the old value. `scrollTop = scrollTop -
+delta` once a frame is then a read-modify-write loop against a value that has
+not caught up: one frame reads a stale offset and re-asks for the target it
+already asked for, so nothing moves; the next reads a fresh one and moves twice
+as far. Dead frame, double step, dead frame — while the cursor, a composited
+transform that round-trips nowhere, glides. A nested `overflow: auto` element
+keeps its offset in the same process as the script, so it never misbehaves.
+
+The runner therefore takes ownership of the offset when a gesture starts,
+writes absolute positions it tracks itself, and never reads the container's
+back. It clamps to the container's own range rather than leaving that to the
+browser, so dragging past the end cannot run the tracked value off into space.
+
+Under a fixture that makes reads lag three frames behind writes, the old
+read-modify-write loop moved 159px where the gesture asked for 636, stalling on
+a fifth of all repaints. Tracking the position instead moves the full distance
+with no stalls.
+
+The `commit` row in the diagnostics panel reports this directly: how far the
+browser's answer trails what was just written, and how often it had not moved
+at all. On a platform that commits synchronously both read 0.
+
+One thing this does *not* fix, and cannot: on iOS the URL bar collapses when you
+scroll with a finger, and does not when the cursor scrolls. Browser chrome
+responds only to real touch gestures, and synthetic events are untrusted by
+design — no script can drive it. It is a visible reminder that these are
+programmatic scrolls, which is the same fact that makes the commit behaviour
+above matter, but it is not itself a cause of jank.
+
 ### If the scroll ripples
 
 A page that never stalls and never lurches can still read as jumpy, and the
