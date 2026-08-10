@@ -73,12 +73,16 @@
        * The pointer-event kind, which is how every modern drag library works:
        * listeners on the document, translating by the delta since pointerdown.
        */
+      window.grabLog = [];
       {
         const handle = document.getElementById('handle');
         let from = null;
         handle.addEventListener('pointerdown', (e) => {
+          window.grabLog.push('pointerdown');
           from = { x: e.clientX, y: e.clientY };
         });
+        handle.addEventListener('click', () => window.grabLog.push('click'));
+        document.addEventListener('pointerup', () => window.grabLog.push('pointerup'));
         document.addEventListener('pointermove', (e) => {
           if (!from) return;
           handle.style.transform =
@@ -237,7 +241,17 @@
         let sampling = true;
         const sample = (t) => {
           if (!sampling) return;
-          samples.push({ y: window.scrollY, t });
+          // Read from a task rather than inside the animation frame itself.
+          // The scroll runner writes from its own rAF callback, and two
+          // callbacks in the same frame run in registration order — which can
+          // swap. Sampling inside the frame then catches the position before
+          // the write on one frame and after it on the next, and reports a
+          // stall followed by a double step that never happened. A task runs
+          // once every callback for that frame is done, so it always sees the
+          // frame's finished position.
+          setTimeout(() => {
+            if (sampling) samples.push({ y: window.scrollY, t });
+          }, 0);
           requestAnimationFrame(sample);
         };
         requestAnimationFrame(sample);

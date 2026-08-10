@@ -638,6 +638,65 @@ for (const lenis of [false, true]) {
     `page scrolled ${dragged.scrolled}px`,
   );
 
+  // --- pressed on contact, and moving from the first pixel -----------------
+  //
+  // A mouse presses the instant the button goes down, and a drag library shows
+  // its held state right then. Waiting for the drag to be recognised first
+  // leaves the element sitting still through the threshold and then jumping to
+  // catch up.
+  const immediate = await page.evaluate(async () => {
+    const el = document.getElementById('handle');
+    el.style.transform = '';
+    const from = await window.spot('handle');
+    window.grabLog = [];
+
+    for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
+    window.feedNow(...window.toCamera(from.x, from.y), true);
+    await new Promise((r) => setTimeout(r, 40));
+    const onPress = window.grabLog.slice();
+
+    // Well under `drag.threshold`, which used to mean no movement at all.
+    const nudge = 12;
+    for (let i = 1; i <= 4; i++) {
+      window.feedNow(...window.toCamera(from.x + (nudge * i) / 4, from.y), true);
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    const moved = Math.round(new DOMMatrix(getComputedStyle(el).transform).e);
+    window.feedNow(...window.toCamera(from.x + nudge, from.y), false);
+    await new Promise((r) => setTimeout(r, 100));
+    el.style.transform = '';
+    return { onPress, moved, nudge };
+  });
+  check(
+    'the pinch takes hold of the element before it has moved at all',
+    immediate.onPress.length === 1 && immediate.onPress[0] === 'pointerdown',
+    JSON.stringify(immediate.onPress),
+  );
+  check(
+    'a small movement moves the element by that much, not by the threshold',
+    Math.abs(immediate.moved - immediate.nudge) <= 4,
+    `hand moved ${immediate.nudge}px, element moved ${immediate.moved}px`,
+  );
+
+  // --- carrying something is not clicking it -------------------------------
+  const clickOnDrag = await page.evaluate(async () => {
+    const el = document.getElementById('handle');
+    el.style.transform = '';
+    const from = await window.spot('handle');
+    window.grabLog = [];
+    await window.pinchDrag({ x: from.x, y: from.y, dx: 120 });
+    await new Promise((r) => setTimeout(r, 200));
+    el.style.transform = '';
+    return window.grabLog;
+  });
+  check(
+    'carrying an element does not also click it',
+    clickOnDrag.includes('pointerdown') &&
+      clickOnDrag.includes('pointerup') &&
+      !clickOnDrag.includes('click'),
+    JSON.stringify(clickOnDrag),
+  );
+
   // --- the HTML5 kind: its own event sequence, which no pointer event implies --
   // Both read after a single scroll: measuring the second one separately would
   // scroll the page again and leave the first set of coordinates pointing
@@ -735,6 +794,24 @@ for (const lenis of [false, true]) {
     JSON.stringify(signals),
   );
   check('a plain element is not a handle', signals.neither === false);
+
+  // A scroll container wearing the same CSS is a scroller, not a handle. This
+  // is the expensive mistake: claim it and the page loses a scrollable region
+  // with no way to get it back.
+  const scroller = await page.evaluate(() => {
+    const box = document.getElementById('box');
+    box.style.touchAction = 'none';
+    box.style.cursor = 'move';
+    const asHandle = window.hc.grabbableFrom(box.querySelector('div'));
+    box.style.touchAction = '';
+    box.style.cursor = '';
+    return asHandle;
+  });
+  check(
+    'a scrollable element is not claimed as a handle by its CSS alone',
+    scroller === null,
+    `matched ${JSON.stringify(scroller)}`,
+  );
 
   // --- the long-press mode, for a scrolling list of draggable cards ---------
   const longPress = await page.evaluate(async () => {
@@ -917,8 +994,12 @@ for (const mode of ['write', 'native', 'hybrid']) {
   });
   const slow = await feel.evaluate(() => window.feelTest({ speed: 700 }));
   const fast = await feel.evaluate(() => window.feelTest({ speed: 1400 }));
+  // Held still for half a second before letting go. `native` hands the drag to
+  // the browser as an animation, and that animation is still running for a few
+  // hundred milliseconds after the hand stops — long enough to be mistaken for
+  // a throw if the hand lets go too soon after stopping.
   const held = await feel.evaluate(() =>
-    window.feelTest({ speed: 1400, holdFrames: 8 }),
+    window.feelTest({ speed: 1400, holdFrames: 16 }),
   );
   // Derived from the configured decay rather than hardcoded, so retuning the
   // feel does not mean rewriting the expectation.

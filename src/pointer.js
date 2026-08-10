@@ -128,8 +128,30 @@ export class TouchEmulator {
     const grab = this.options.grab;
     this.grabTarget = grab.enabled && el && !internal ? grabbableFrom(el, grab) : null;
     this.scrolled = false;
-    this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
+
+    // With no hold required the gesture is already a grab, so there is nothing
+    // to scroll and nothing to wait for. Only the long-press mode has to keep
+    // its options open, because there a quick drag is still a scroll.
+    const immediate = Boolean(this.grabTarget) && grab.holdDelay === 0;
+    this.scrollTarget = internal || !el || immediate ? null : scrollTargetFor(el);
     this.scroller.setTarget(this.scrollTarget);
+    if (immediate) this.beginGrab(x, y, el);
+  }
+
+  /** True once the pinch has moved far enough, and been held long enough. */
+  pastDragGate(x, y, now) {
+    const { threshold, holdDelay, holdEscape } = this.options.drag;
+    const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
+    // Closing the pinch moves the hand, so the first moments of every press
+    // carry drift that has nothing to do with intent. Waiting that out is what
+    // lets a deliberate tap stay a tap.
+    //
+    // A flick does not need waiting out, though: pinch drift is small and slow,
+    // so travelling `holdEscape` this early is already unambiguous. Making a
+    // fast gesture sit through the delay is what reads as the page starting
+    // late.
+    if (travel < holdEscape && now - this.origin.t < holdDelay) return false;
+    return travel >= threshold;
   }
 
   /** Cursor moved while the pinch is held. */
@@ -144,20 +166,21 @@ export class TouchEmulator {
     const keep = this.options.drag.velocityWindow * 2;
     while (this.samples.length > 2 && now - this.samples[0].t > keep) this.samples.shift();
 
-    if (!this.dragging) {
-      const { threshold, holdDelay, holdEscape } = this.options.drag;
-      const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
-      // Closing the pinch moves the hand, so the first moments of every press
-      // carry drift that has nothing to do with intent. Waiting that out is
-      // what lets a deliberate tap stay a tap.
-      //
-      // A flick does not need waiting out, though: pinch drift is small and
-      // slow, so travelling `holdEscape` this early is already unambiguous.
-      // Making a fast gesture sit through the delay is what reads as the page
-      // starting late.
-      if (travel < holdEscape && now - this.origin.t < holdDelay) return;
-      if (travel < threshold) return;
+    // Already holding something: it follows the hand from the first pixel,
+    // with no threshold in the way. The gate below still runs, but only to
+    // decide whether this ends as a click and when the HTML5 drag opens.
+    if (this.grab) {
+      if (!this.dragging && this.pastDragGate(x, y, now)) {
+        this.dragging = true;
+        this.leaveHovered(x, y);
+        this.grab.start(x, y);
+      }
+      this.dragElement(x, y);
+      return;
+    }
 
+    if (!this.dragging) {
+      if (!this.pastDragGate(x, y, now)) return;
       this.dragging = true;
       this.leaveHovered(x, y);
       // Fall through, so this frame scrolls by its own delta only. The distance
@@ -166,10 +189,12 @@ export class TouchEmulator {
     }
 
     // A gesture is either carrying an element or scrolling, never both, and
-    // whichever starts first keeps the gesture. With `grab.holdDelay` at 0 the
-    // grab always wins, because it is decided on the same frame the drag is.
+    // whichever starts first keeps the gesture. Only the long-press mode gets
+    // here with a grab target: without one, the grab opened on press.
     if (this.grabTarget && !this.scrolled) {
-      if (this.grab || now - this.origin.t >= this.options.grab.holdDelay) {
+      if (now - this.origin.t >= this.options.grab.holdDelay) {
+        this.beginGrab(x, y, this.resolve(x, y).el);
+        this.grab.start(x, y);
         this.dragElement(x, y);
         return;
       }
@@ -185,26 +210,19 @@ export class TouchEmulator {
     this.scroller.push(dx, dy, now);
   }
 
-  /**
-   * Carries an element along with the hand.
-   *
-   * The caller has already decided this gesture is a grab rather than a scroll.
-   */
-  dragElement(x, y) {
-    if (!this.grab) {
-      // The scroll runner was handed a target on press and suppressed the
-      // page's smooth scrolling with it. Nothing is going to scroll now, so it
-      // has to be told, or that override stays on the page.
-      this.scroller.stop();
-      this.grab = new Grab(
-        this.grabTarget,
-        this.origin.x,
-        this.origin.y,
-        this.options.grab.html5,
-      );
-      this.onGrab?.({ type: 'start', target: this.grab.node, x, y });
-    }
+  /** Takes hold of the element under the cursor. */
+  beginGrab(x, y, el) {
+    // The scroll runner may have been handed a target and suppressed the page's
+    // smooth scrolling with it. Nothing is going to scroll now, so it has to be
+    // told, or that override stays on the page.
+    this.scroller.stop();
+    this.scrollTarget = null;
+    this.grab = new Grab(this.grabTarget, el, x, y, this.options.grab.html5);
+    this.onGrab?.({ type: 'start', target: this.grab.node, x, y });
+  }
 
+  /** Carries the held element along with the hand. */
+  dragElement(x, y) {
     const { el, internal } = this.resolve(x, y);
     this.grab.move(x, y, internal ? null : el);
   }
@@ -244,10 +262,16 @@ export class TouchEmulator {
 
     if (this.grab) {
       const grab = this.grab;
+      const wasDrag = this.dragging;
       this.grab = null;
       this.grabTarget = null;
       this.dragging = false;
-      const dropped = grab.end(x, y);
+      const { el, internal } = this.resolve(x, y);
+      const dropped = grab.end(x, y, internal ? null : el);
+      // A press that never became a drag is a click, exactly as it is with a
+      // mouse. The pointerdown that opened the grab already stands in for the
+      // one a tap would have fired, so only the click itself is left.
+      if (!wasDrag && this.isTap(origin, x, y, now)) this.click(grab.pressed, origin.x, origin.y);
       this.onGrab?.({ type: 'end', target: grab.node, dropped, x, y });
       return;
     }
@@ -262,12 +286,32 @@ export class TouchEmulator {
       return;
     }
 
-    const travel = Math.hypot(x - origin.x, y - origin.y);
-    const duration = now - origin.t;
-    const { maxDuration, maxTravel } = this.options.tap;
-    if (travel > maxTravel || duration > maxDuration) return;
-
+    if (!this.isTap(origin, x, y, now)) return;
     this.tap(origin.x, origin.y);
+  }
+
+  /** Short enough and still enough to have meant a click rather than a drag. */
+  isTap(origin, x, y, now) {
+    const { maxDuration, maxTravel } = this.options.tap;
+    return (
+      Math.hypot(x - origin.x, y - origin.y) <= maxTravel && now - origin.t <= maxDuration
+    );
+  }
+
+  /** Moves focus and fires the click, the tail end of every tap. */
+  click(el, x, y) {
+    const focusTarget = el.closest?.(FOCUSABLE);
+    if (focusTarget) {
+      try {
+        focusTarget.focus({ preventScroll: true });
+      } catch {
+        /* focus is best effort */
+      }
+    } else if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur?.();
+    }
+    fireMouse(el, 'click', x, y, { buttons: 0, button: 0, detail: 1 });
+    this.onTap?.({ x, y, target: el, internal: false });
   }
 
   tap(x, y) {
@@ -282,23 +326,9 @@ export class TouchEmulator {
 
     firePointer(el, 'pointerdown', x, y, { buttons: 1, button: 0 });
     fireMouse(el, 'mousedown', x, y, { buttons: 1, button: 0 });
-
-    const focusTarget = el.closest?.(FOCUSABLE);
-    if (focusTarget) {
-      try {
-        focusTarget.focus({ preventScroll: true });
-      } catch {
-        /* focus is best effort */
-      }
-    } else if (document.activeElement && document.activeElement !== document.body) {
-      document.activeElement.blur?.();
-    }
-
     firePointer(el, 'pointerup', x, y, { buttons: 0, button: 0 });
     fireMouse(el, 'mouseup', x, y, { buttons: 0, button: 0 });
-    fireMouse(el, 'click', x, y, { buttons: 0, button: 0, detail: 1 });
-
-    this.onTap?.({ x, y, target: el, internal: false });
+    this.click(el, x, y);
   }
 
 

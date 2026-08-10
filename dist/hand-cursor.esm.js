@@ -964,6 +964,11 @@ function fireDrag(el, type, x, y, dataTransfer) {
 }
 
 // src/grab.js
+var SCROLLABLE = /(auto|scroll|overlay)/;
+function scrolls(node) {
+  const style = getComputedStyle(node);
+  return SCROLLABLE.test(style.overflowY) && node.scrollHeight - node.clientHeight > 1 || SCROLLABLE.test(style.overflowX) && node.scrollWidth - node.clientWidth > 1;
+}
 function cursorOwner(node, cursor) {
   let owner = node;
   while (owner.parentElement) {
@@ -983,11 +988,11 @@ function grabbableFrom(el, options) {
     if (html5) return { node, html5: true };
     if (selector && node.matches?.(selector)) return { node, html5: false };
     const root = node === document.body || node === document.documentElement;
-    if (!root) {
+    if (!root && !scrolls(node)) {
       const style = getComputedStyle(node);
       if (styled.has(style.cursor)) {
         const owner = cursorOwner(node, style.cursor);
-        if (owner) return { node: owner, html5: false };
+        if (owner && !scrolls(owner)) return { node: owner, html5: false };
       }
       if (touchAction && style.touchAction === "none") return { node, html5: false };
     }
@@ -997,28 +1002,40 @@ function grabbableFrom(el, options) {
 }
 var Grab = class {
   /**
-   * @param {{node: Element, html5: boolean}} target  what is being picked up
-   * @param {number} x  where the pinch closed — not where it is now
+   * @param {{node: Element, html5: boolean}} target  what would be carried
+   * @param {Element} on    the deepest element under the cursor
+   * @param {number} x
    * @param {number} y
+   * @param {boolean} useHtml5
    */
-  constructor(target, x, y, useHtml5) {
+  constructor(target, on, x, y, useHtml5) {
     this.node = target.node;
+    this.html5 = target.html5 && useHtml5;
+    this.started = false;
     this.over = null;
     this.canDrop = false;
     this.dataTransfer = null;
-    if (target.html5 && useHtml5) {
-      try {
-        this.dataTransfer = new DataTransfer();
-      } catch {
-        this.dataTransfer = null;
-      }
+    this.pressed = on || this.node;
+    firePointer(this.pressed, "pointerdown", x, y, { buttons: 1, button: 0 });
+    fireMouse(this.pressed, "mousedown", x, y, { buttons: 1, button: 0 });
+  }
+  /**
+   * The hand has moved far enough that this is a drag rather than a press.
+   *
+   * Only now does the HTML5 sequence open, because that is when a browser
+   * opens it too — `mousedown` alone never starts a drag and drop.
+   */
+  start(x, y) {
+    if (this.started) return;
+    this.started = true;
+    if (!this.html5) return;
+    try {
+      this.dataTransfer = new DataTransfer();
+    } catch {
+      return;
     }
-    firePointer(this.node, "pointerdown", x, y, { buttons: 1, button: 0 });
-    fireMouse(this.node, "mousedown", x, y, { buttons: 1, button: 0 });
-    if (this.dataTransfer) {
-      this.dataTransfer.effectAllowed = "all";
-      fireDrag(this.node, "dragstart", x, y, this.dataTransfer);
-    }
+    this.dataTransfer.effectAllowed = "all";
+    fireDrag(this.node, "dragstart", x, y, this.dataTransfer);
   }
   /**
    * @param {number} x
@@ -1026,7 +1043,7 @@ var Grab = class {
    * @param {Element|null} under  what the cursor is over, excluding our own UI
    */
   move(x, y, under) {
-    const to = this.node.isConnected ? this.node : under || document;
+    const to = under || (this.pressed.isConnected ? this.pressed : document);
     firePointer(to, "pointermove", x, y, { buttons: 1 });
     fireMouse(to, "mousemove", x, y, { buttons: 1 });
     if (!this.dataTransfer) return;
@@ -1039,8 +1056,8 @@ var Grab = class {
     this.canDrop = under ? !fireDrag(under, "dragover", x, y, this.dataTransfer) : false;
   }
   /** Let go. Returns whether the element was dropped on something. */
-  end(x, y) {
-    const to = this.node.isConnected ? this.node : this.over || document;
+  end(x, y, under) {
+    const to = under || (this.pressed.isConnected ? this.pressed : document);
     firePointer(to, "pointerup", x, y, { buttons: 0, button: 0 });
     fireMouse(to, "mouseup", x, y, { buttons: 0, button: 0 });
     const dropped = Boolean(this.dataTransfer && this.over && this.canDrop);
@@ -1050,9 +1067,12 @@ var Grab = class {
     }
     return dropped;
   }
-  /** The hand left the frame. Put everything down without dropping it. */
+  /**
+   * Something else has taken the gesture over — the hand left the frame, or a
+   * scroll won. Put everything down without dropping it.
+   */
   cancel(x, y) {
-    const to = this.node.isConnected ? this.node : document;
+    const to = this.pressed.isConnected ? this.pressed : document;
     firePointer(to, "pointercancel", x, y, { buttons: 0 });
     if (this.dataTransfer) {
       if (this.over) fireDrag(this.over, "dragleave", x, y, this.dataTransfer);
@@ -1062,14 +1082,14 @@ var Grab = class {
 };
 
 // src/scroll.js
-var SCROLLABLE = /(auto|scroll|overlay)/;
+var SCROLLABLE2 = /(auto|scroll|overlay)/;
 function scrollTargetFor(el) {
   let node = el;
   while (node && node !== document.documentElement && node !== document.body) {
     if (node.nodeType === 1) {
       const style = getComputedStyle(node);
-      const canY = SCROLLABLE.test(style.overflowY) && node.scrollHeight - node.clientHeight > 1;
-      const canX = SCROLLABLE.test(style.overflowX) && node.scrollWidth - node.clientWidth > 1;
+      const canY = SCROLLABLE2.test(style.overflowY) && node.scrollHeight - node.clientHeight > 1;
+      const canX = SCROLLABLE2.test(style.overflowX) && node.scrollWidth - node.clientWidth > 1;
       if (canY || canX) return { node, canX, canY };
     }
     node = node.parentElement || node.getRootNode()?.host || null;
@@ -1559,8 +1579,17 @@ var TouchEmulator = class {
     const grab = this.options.grab;
     this.grabTarget = grab.enabled && el && !internal ? grabbableFrom(el, grab) : null;
     this.scrolled = false;
-    this.scrollTarget = internal || !el ? null : scrollTargetFor(el);
+    const immediate = Boolean(this.grabTarget) && grab.holdDelay === 0;
+    this.scrollTarget = internal || !el || immediate ? null : scrollTargetFor(el);
     this.scroller.setTarget(this.scrollTarget);
+    if (immediate) this.beginGrab(x, y, el);
+  }
+  /** True once the pinch has moved far enough, and been held long enough. */
+  pastDragGate(x, y, now) {
+    const { threshold, holdDelay, holdEscape } = this.options.drag;
+    const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
+    if (travel < holdEscape && now - this.origin.t < holdDelay) return false;
+    return travel >= threshold;
   }
   /** Cursor moved while the pinch is held. */
   drag(x, y, now) {
@@ -1571,16 +1600,24 @@ var TouchEmulator = class {
     this.samples.push({ x, y, t: now });
     const keep = this.options.drag.velocityWindow * 2;
     while (this.samples.length > 2 && now - this.samples[0].t > keep) this.samples.shift();
+    if (this.grab) {
+      if (!this.dragging && this.pastDragGate(x, y, now)) {
+        this.dragging = true;
+        this.leaveHovered(x, y);
+        this.grab.start(x, y);
+      }
+      this.dragElement(x, y);
+      return;
+    }
     if (!this.dragging) {
-      const { threshold, holdDelay, holdEscape } = this.options.drag;
-      const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
-      if (travel < holdEscape && now - this.origin.t < holdDelay) return;
-      if (travel < threshold) return;
+      if (!this.pastDragGate(x, y, now)) return;
       this.dragging = true;
       this.leaveHovered(x, y);
     }
     if (this.grabTarget && !this.scrolled) {
-      if (this.grab || now - this.origin.t >= this.options.grab.holdDelay) {
+      if (now - this.origin.t >= this.options.grab.holdDelay) {
+        this.beginGrab(x, y, this.resolve(x, y).el);
+        this.grab.start(x, y);
         this.dragElement(x, y);
         return;
       }
@@ -1588,22 +1625,15 @@ var TouchEmulator = class {
     this.scrolled = true;
     this.scroller.push(dx, dy, now);
   }
-  /**
-   * Carries an element along with the hand.
-   *
-   * The caller has already decided this gesture is a grab rather than a scroll.
-   */
+  /** Takes hold of the element under the cursor. */
+  beginGrab(x, y, el) {
+    this.scroller.stop();
+    this.scrollTarget = null;
+    this.grab = new Grab(this.grabTarget, el, x, y, this.options.grab.html5);
+    this.onGrab?.({ type: "start", target: this.grab.node, x, y });
+  }
+  /** Carries the held element along with the hand. */
   dragElement(x, y) {
-    if (!this.grab) {
-      this.scroller.stop();
-      this.grab = new Grab(
-        this.grabTarget,
-        this.origin.x,
-        this.origin.y,
-        this.options.grab.html5
-      );
-      this.onGrab?.({ type: "start", target: this.grab.node, x, y });
-    }
     const { el, internal } = this.resolve(x, y);
     this.grab.move(x, y, internal ? null : el);
   }
@@ -1638,10 +1668,13 @@ var TouchEmulator = class {
     this.origin = null;
     if (this.grab) {
       const grab = this.grab;
+      const wasDrag = this.dragging;
       this.grab = null;
       this.grabTarget = null;
       this.dragging = false;
-      const dropped = grab.end(x, y);
+      const { el, internal } = this.resolve(x, y);
+      const dropped = grab.end(x, y, internal ? null : el);
+      if (!wasDrag && this.isTap(origin, x, y, now)) this.click(grab.pressed, origin.x, origin.y);
       this.onGrab?.({ type: "end", target: grab.node, dropped, x, y });
       return;
     }
@@ -1652,11 +1685,27 @@ var TouchEmulator = class {
       this.scroller.fling(velocity.x, velocity.y);
       return;
     }
-    const travel = Math.hypot(x - origin.x, y - origin.y);
-    const duration = now - origin.t;
-    const { maxDuration, maxTravel } = this.options.tap;
-    if (travel > maxTravel || duration > maxDuration) return;
+    if (!this.isTap(origin, x, y, now)) return;
     this.tap(origin.x, origin.y);
+  }
+  /** Short enough and still enough to have meant a click rather than a drag. */
+  isTap(origin, x, y, now) {
+    const { maxDuration, maxTravel } = this.options.tap;
+    return Math.hypot(x - origin.x, y - origin.y) <= maxTravel && now - origin.t <= maxDuration;
+  }
+  /** Moves focus and fires the click, the tail end of every tap. */
+  click(el, x, y) {
+    const focusTarget = el.closest?.(FOCUSABLE);
+    if (focusTarget) {
+      try {
+        focusTarget.focus({ preventScroll: true });
+      } catch {
+      }
+    } else if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur?.();
+    }
+    fireMouse(el, "click", x, y, { buttons: 0, button: 0, detail: 1 });
+    this.onTap?.({ x, y, target: el, internal: false });
   }
   tap(x, y) {
     const { el, internal } = this.resolve(x, y);
@@ -1668,19 +1717,9 @@ var TouchEmulator = class {
     }
     firePointer(el, "pointerdown", x, y, { buttons: 1, button: 0 });
     fireMouse(el, "mousedown", x, y, { buttons: 1, button: 0 });
-    const focusTarget = el.closest?.(FOCUSABLE);
-    if (focusTarget) {
-      try {
-        focusTarget.focus({ preventScroll: true });
-      } catch {
-      }
-    } else if (document.activeElement && document.activeElement !== document.body) {
-      document.activeElement.blur?.();
-    }
     firePointer(el, "pointerup", x, y, { buttons: 0, button: 0 });
     fireMouse(el, "mouseup", x, y, { buttons: 0, button: 0 });
-    fireMouse(el, "click", x, y, { buttons: 0, button: 0, detail: 1 });
-    this.onTap?.({ x, y, target: el, internal: false });
+    this.click(el, x, y);
   }
   /** The hand left the frame: drop everything without firing a tap. */
   cancel(x = 0, y = 0) {

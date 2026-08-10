@@ -160,6 +160,16 @@ for, in this order:
 | `touch-action: none` | Drag libraries, which set it so the browser does not scroll while they drag |
 | `grab.selector` | Whatever the other three miss |
 
+The CSS signals are read a little carefully, because both of them can be true of
+things that are not handles. `cursor` is inherited, so what counts is the
+element the value came *from* — which is also what makes grabbing a card by its
+label carry the card — and a value originating on `body` is a page-wide style
+rather than an offer. And an element that scrolls is never claimed on CSS
+evidence alone: `touch-action: none` on a scroll container is far more likely to
+be a tweak to how it scrolls than an invitation to drag it, and getting that
+wrong costs the page a scrollable region. `draggable` and `grab.selector` are
+checked first and always win.
+
 The pointer events sent are the same ones a touchscreen produces —
 `pointerdown`, a stream of `pointermove`, `pointerup`, each with its mouse-event
 twin — so a library that already works on a phone works here without knowing
@@ -173,11 +183,16 @@ for real drags, so it is synthesized separately —  `dragstart`, `dragenter` /
 nothing accepts it, `dragend` fires without a `drop`, exactly as a mouse drag
 would behave.
 
-The `pointerdown` opens at the point the pinch closed rather than the point the
-drag was recognised, so a library measuring from its own `pointerdown` holds the
-element where you actually grabbed it. The element then jumps forward by
-`drag.threshold` on the first move — the same thing a touchscreen does with an
-activation distance.
+The press lands the moment the pinch closes, not when the drag is recognised —
+the same as a mouse button. A library shows its held state straight away, and
+the element follows from the first pixel rather than sitting still through
+`drag.threshold` and then jumping to catch up.
+
+What the threshold still decides is whether the gesture ends as a click or a
+drag, which is settled on release, and when the HTML5 sequence opens — because
+`mousedown` alone never starts a drag and drop in a browser either. So a pinch
+and release without moving is a click on the card, exactly as it is with a
+mouse.
 
 ### Why isn't my element draggable?
 
