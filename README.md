@@ -496,7 +496,7 @@ Built to the *Hand Tracking Cursor Design System* (August 2026). Tokens live in
 | Red | `#FF4040` — errors |
 | Light gray | `#F6F6F6` — card surface |
 | Icon dark | `#1C1B1F` — icon strokes |
-| Radius | 4px controls, 8px buttons, 12px cards |
+| Radius | 8px buttons and controls, 12px cards |
 | Trackpad | 260 × 200, 12px padding, 4px corner insets |
 | Minimized | 106 × 106; the green camera button appears only before the camera is on |
 | Illustration | 66 × 98 on the pre-enabled card |

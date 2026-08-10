@@ -408,6 +408,11 @@ check(
   `${live.width}x${live.height}`,
 );
 check('the camera-off control appears when live', cornerLeft.display !== 'none', cornerLeft.display);
+check(
+  'the corner icon buttons are 32x32 with an 8px radius',
+  cornerLeft.width === 32 && cornerLeft.height === 32 && cornerLeft.radius === '8px',
+  JSON.stringify(cornerLeft),
+);
 
 const miniLive = await page.evaluate(async () => {
   window.hc.setMinimized(true);

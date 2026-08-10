@@ -243,7 +243,6 @@ var HandCursor = (() => {
     divider: "rgba(0, 0, 0, 0.08)"
   };
   var RADIUS = {
-    control: 4,
     button: 8,
     card: 12
   };
@@ -468,7 +467,7 @@ var HandCursor = (() => {
 .hc-corner {
   width: ${SIZE.cornerButton}px;
   height: ${SIZE.cornerButton}px;
-  border-radius: ${RADIUS.control}px;
+  border-radius: ${RADIUS.button}px;
   transition: background-color 150ms linear;
 }
 

@@ -200,7 +200,7 @@ export const CSS = `
 .hc-corner {
   width: ${SIZE.cornerButton}px;
   height: ${SIZE.cornerButton}px;
-  border-radius: ${RADIUS.control}px;
+  border-radius: ${RADIUS.button}px;
   transition: background-color 150ms linear;
 }
 
