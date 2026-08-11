@@ -1633,7 +1633,6 @@ var HandCursor = (() => {
       if (this.grab) {
         if (!this.dragging && this.pastDragGate(x, y, now)) {
           this.dragging = true;
-          this.leaveHovered(x, y);
           this.grab.start(x, y);
         }
         this.dragElement(x, y);

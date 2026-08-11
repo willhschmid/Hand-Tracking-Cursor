@@ -22,9 +22,13 @@
       /* A library-style handle: no attribute, no selector, just the CSS that
          every drag library leaves behind. */
       #handle {
-        margin-top: 12px; width: 200px; height: 80px; background: #cfc;
+        margin-top: 12px; width: 200px; height: 80px; background: rgb(10, 20, 30);
         cursor: grab; touch-action: none; position: relative;
       }
+      /* Drag handles almost always have a hover state — a lift, a shadow, a
+         colour. It has to survive the whole drag, the way it does under a
+         mouse, or the element flashes partway through the gesture. */
+      #handle:hover { background: rgb(0, 202, 72); }
       #plain { margin-top: 12px; width: 200px; height: 80px; background: #fdd; }
     </style>
   </head>

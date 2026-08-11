@@ -678,6 +678,41 @@ for (const lenis of [false, true]) {
     `hand moved ${immediate.nudge}px, element moved ${immediate.moved}px`,
   );
 
+  // --- and it keeps its hover state the whole way ---------------------------
+  const hover = await page.evaluate(async () => {
+    const el = document.getElementById('handle');
+    el.style.transform = '';
+    const from = await window.spot('handle');
+    const shade = () => getComputedStyle(el).backgroundColor;
+
+    for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
+    const hovered = shade();
+    window.feedNow(...window.toCamera(from.x, from.y), true);
+
+    // Sampled well past `drag.threshold`, which is where the hover used to be
+    // dropped — mid-gesture, long after the pinch.
+    let during = null;
+    for (let i = 1; i <= 10; i++) {
+      window.feedNow(...window.toCamera(from.x + i * 12, from.y), true);
+      await new Promise((r) => setTimeout(r, 30));
+      if (i === 8) during = shade();
+    }
+    window.feedNow(...window.toCamera(from.x + 120, from.y), false);
+    await new Promise((r) => setTimeout(r, 150));
+    el.style.transform = '';
+    return { hovered, during };
+  });
+  check(
+    'the fixture really does have a hover state',
+    hover.hovered === 'rgb(0, 202, 72)',
+    hover.hovered,
+  );
+  check(
+    'an element keeps its hover state while being carried',
+    hover.during === hover.hovered,
+    `hovered ${hover.hovered}, mid-drag ${hover.during}`,
+  );
+
   // --- carrying something is not clicking it -------------------------------
   const clickOnDrag = await page.evaluate(async () => {
     const el = document.getElementById('handle');

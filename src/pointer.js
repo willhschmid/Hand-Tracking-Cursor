@@ -172,7 +172,13 @@ export class TouchEmulator {
     if (this.grab) {
       if (!this.dragging && this.pastDragGate(x, y, now)) {
         this.dragging = true;
-        this.leaveHovered(x, y);
+        // Hover deliberately stays. The cursor has not left the element — it is
+        // carrying it — and a mouse keeps `:hover` on what it drags. Dropping
+        // it here fires mouseleave and strips the mirrored hover styles from
+        // the element and its ancestors, so a card with any hover state at all
+        // snaps out of it partway through the gesture: a flash, arriving a
+        // beat after the pinch, which is the whole complaint about waiting for
+        // the drag to be recognised.
         this.grab.start(x, y);
       }
       this.dragElement(x, y);

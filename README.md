@@ -194,6 +194,12 @@ drag, which is settled on release, and when the HTML5 sequence opens — because
 and release without moving is a click on the card, exactly as it is with a
 mouse.
 
+Hover stays on for the whole drag, as it does under a mouse: the cursor has not
+left the element, it is carrying it. Dropping it partway through fires
+`mouseleave` and strips the mirrored hover styles from the element *and* its
+ancestors, so a card with any hover state at all — a lift, a shadow, a colour —
+visibly snaps out of it a beat after the pinch.
+
 ### Why isn't my element draggable?
 
 Ask directly:
