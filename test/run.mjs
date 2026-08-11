@@ -719,7 +719,9 @@ for (const lenis of [false, true]) {
     el.style.transform = '';
     const from = await window.spot('handle');
     window.grabLog = [];
-    await window.pinchDrag({ x: from.x, y: from.y, dx: 120 });
+    // Comfortably past `grab.tapDuration`, so this is a drag by the only
+    // measure that counts.
+    await window.pinchDrag({ x: from.x, y: from.y, dx: 120, steps: 24 });
     await new Promise((r) => setTimeout(r, 200));
     el.style.transform = '';
     return window.grabLog;
@@ -734,11 +736,12 @@ for (const lenis of [false, true]) {
 
   // --- clicking something that can also be dragged --------------------------
   //
-  // The hard case, and the reason grabs get their own threshold: a button that
-  // is also a drag handle. A pinch held in mid-air on a small target drifts
-  // further than a finger on glass ever would, and every pixel of that drift
-  // used to count against the click.
-  const wobble = await page.evaluate(async () => {
+  // The hard case: a button that is also a drag handle. How long the pinch
+  // lasted is the only thing that separates the two. Distance says nothing,
+  // because the element is picked up the instant the pinch closes and follows
+  // the hand from there, so every press moves it — and a pinch held in mid-air
+  // drifts further than a finger on glass ever does.
+  const quick = await page.evaluate(async () => {
     const el = document.getElementById('handle');
     el.style.transform = '';
     const from = await window.spot('handle');
@@ -746,25 +749,24 @@ for (const lenis of [false, true]) {
 
     for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
     window.feedNow(...window.toCamera(from.x, from.y), true);
-    // Out to 45px and back — past the old 32px allowance, inside the new one.
-    for (const d of [0, 14, 28, 38, 45, 38, 26, 14, 6]) {
+    // A long way — far past anything a distance rule would have allowed — but
+    // over and done with well inside the tap window.
+    for (const d of [0, 25, 50, 75, 100]) {
       window.feedNow(...window.toCamera(from.x + d, from.y), true);
       await new Promise((r) => setTimeout(r, 40));
     }
-    window.feedNow(...window.toCamera(from.x + 6, from.y), false);
+    window.feedNow(...window.toCamera(from.x + 100, from.y), false);
     await new Promise((r) => setTimeout(r, 150));
     el.style.transform = '';
     return window.grabLog;
   });
   check(
-    'a wobbly press on a draggable still clicks it',
-    wobble.includes('click'),
-    `drifted 45px and got ${JSON.stringify(wobble)}`,
+    'a quick pinch on a draggable clicks it, however far it travelled',
+    quick.includes('click'),
+    `moved 100px in 200ms and got ${JSON.stringify(quick)}`,
   );
 
-  // Holding still for over a second is not a drag, so it is a click — which is
-  // what a browser does. `tap.maxDuration` is there to stop a long *scroll*
-  // ending in one, and nothing here is scrolling.
+  // The other side of the same rule: held is a drag, even standing still.
   const lingered = await page.evaluate(async () => {
     const el = document.getElementById('handle');
     el.style.transform = '';
@@ -773,7 +775,7 @@ for (const lenis of [false, true]) {
 
     for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
     window.feedNow(...window.toCamera(from.x, from.y), true);
-    const until = performance.now() + 1200;
+    const until = performance.now() + 900;
     while (performance.now() < until) {
       window.feedNow(...window.toCamera(from.x + 3, from.y), true);
       await new Promise((r) => setTimeout(r, 40));
@@ -784,9 +786,9 @@ for (const lenis of [false, true]) {
     return window.grabLog;
   });
   check(
-    'a slow, deliberate press on a draggable still clicks it',
-    lingered.includes('click'),
-    `held 1.2s and got ${JSON.stringify(lingered)}`,
+    'a pinch held past the tap window is a drag, not a click',
+    !lingered.includes('click'),
+    `held 900ms barely moving and got ${JSON.stringify(lingered)}`,
   );
 
   // Letting go somewhere else is not a click, however short the gesture — the
@@ -803,7 +805,7 @@ for (const lenis of [false, true]) {
     const y = r.bottom - 8;
     for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(x, y), false);
     window.feedNow(...window.toCamera(x, y), true);
-    // 40px down, which is under the grab threshold but off the card entirely.
+    // Quick enough to be a tap, but let go off the card entirely.
     for (const d of [10, 20, 30, 40]) {
       window.feedNow(...window.toCamera(x, y + d), true);
       await new Promise((rs) => setTimeout(rs, 40));
@@ -1125,16 +1127,22 @@ for (const mode of ['write', 'native', 'hybrid']) {
   );
   // Derived from the configured decay rather than hardcoded, so retuning the
   // feel does not mean rewriting the expectation.
-  const ideal = await feel.evaluate(() => {
-    const { friction } = window.hc.options.drag;
-    return 1400 * (-1 / (60 * Math.log(friction)));
+  const { ideal, retargetMs } = await feel.evaluate(() => {
+    const { friction, retargetMs: r } = window.hc.options.drag;
+    return { ideal: 1400 * (-1 / (60 * Math.log(friction))), retargetMs: r };
   });
   await feel.close();
 
+  // `native` cannot start before it has issued its first scroll, and it issues
+  // those on a fixed cadence, so its floor is genuinely one interval higher.
+  // Holding it to the same number as the modes that write every frame would be
+  // measuring the cadence rather than the responsiveness.
+  const promptly = 140 + (mode === 'native' ? retargetMs : 0);
+
   check(
     `${mode}: a flick starts the page moving promptly`,
-    fast.latencyMs >= 0 && fast.latencyMs < 140,
-    `took ${fast.latencyMs}ms — ${JSON.stringify(fast)}`,
+    fast.latencyMs >= 0 && fast.latencyMs < promptly,
+    `took ${fast.latencyMs}ms, allowed ${promptly}ms — ${JSON.stringify(fast)}`,
   );
   check(
     `${mode}: the throw carries the hand's speed`,

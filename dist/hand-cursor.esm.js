@@ -185,18 +185,22 @@ var DEFAULTS = {
      */
     touchAction: true,
     /**
-     * Travel, in px, before a hold on an element is committed to being a drag
-     * rather than a press.
+     * How long a pinch on a held element can last and still count as a tap, in
+     * ms. Longer than this and the gesture was a drag.
      *
-     * Deliberately looser than `drag.threshold`, which governs scrolling. A
-     * held element already follows the hand from the first pixel, so letting it
-     * travel further before the gesture is *called* a drag costs nothing to
-     * look at, and buys back the room a pinch needs to settle on something that
-     * can be clicked as well as dragged. Below this a release is a click, with
-     * no limit on how far the hand wandered or how long it took — which is the
-     * rule a browser applies to a mouse.
+     * Length is the only thing that decides it. Distance is deliberately not
+     * consulted: the element is picked up and follows the hand the instant the
+     * pinch closes, so *every* press moves it a little, and a hand holding a
+     * pinch in mid-air drifts further than a finger on glass ever does. Judging
+     * a tap by how far it travelled meant a deliberate press on something
+     * draggable kept being read as a drag.
+     *
+     * The trade is that a genuinely quick flick — an element thrown some
+     * distance and released inside this window — also registers as a tap.
+     * Lower this if that happens; raise it if unhurried presses are not
+     * landing.
      */
-    threshold: 56,
+    tapDuration: 400,
     /** Synthesize the HTML5 dragstart/dragover/drop sequence for `draggable`. */
     html5: true,
     /**
@@ -1626,7 +1630,7 @@ var TouchEmulator = class {
     const keep = this.options.drag.velocityWindow * 2;
     while (this.samples.length > 2 && now - this.samples[0].t > keep) this.samples.shift();
     if (this.grab) {
-      if (!this.dragging && this.pastDragGate(x, y, now, this.options.grab.threshold)) {
+      if (!this.dragging && now - this.origin.t >= this.options.grab.tapDuration) {
         this.dragging = true;
         this.grab.start(x, y);
       }
@@ -1692,7 +1696,7 @@ var TouchEmulator = class {
     this.origin = null;
     if (this.grab) {
       const grab = this.grab;
-      const wasDrag = this.dragging;
+      const wasDrag = this.dragging || now - origin.t >= this.options.grab.tapDuration;
       this.grab = null;
       this.grabTarget = null;
       this.dragging = false;

@@ -202,21 +202,24 @@ visibly snaps out of it a beat after the pinch.
 
 ### Clicking something that can also be dragged
 
-A button that doubles as a drag handle is the hard case, and it gets its own
-threshold. `grab.threshold` is looser than `drag.threshold` because the two are
-protecting different things: the scroll threshold stops the page moving under a
-tap, while this one only decides whether a gesture already carrying an element
-counts as a drag or a press. The element follows the hand from the first pixel
-either way, so the extra room costs nothing to look at, and all of it comes back
-as tolerance for a click.
+A button that doubles as a drag handle is the hard case, and **how long the
+pinch lasted is the only thing that separates the two**. Released inside
+`grab.tapDuration` it is a click; held past it, a drag.
 
-Below that threshold, letting go is a click — with no limit on how far the hand
-wandered or how long it took, as long as the press and the release belong to the
-same element. That is the rule a browser applies to a mouse, and it matters more
-here than there: a pinch held in mid-air drifts further than a finger on glass
-ever does, and `tap.maxTravel` used to count every pixel of that drift against
-the click. Raise `grab.threshold` if a deliberate press still reads as a drag;
-lower it if small drags are clicking.
+Distance is deliberately not consulted. It cannot be: the element is picked up
+the instant the pinch closes and follows the hand from there, so *every* press
+moves it a little, and a pinch held in mid-air drifts further than a finger on
+glass ever does. Judging a tap by how far it travelled meant a deliberate press
+on something draggable kept being read as a drag.
+
+The one thing still checked is that the press and the release belong to the same
+element — letting go somewhere else is not a click, the same rule a browser
+applies to a mouse.
+
+The trade is at the other end: a genuinely quick flick, an element thrown some
+distance and released inside the window, also registers as a click. Lower
+`grab.tapDuration` if that happens, raise it if unhurried presses are not
+landing.
 
 ### Why isn't my element draggable?
 
@@ -331,7 +334,7 @@ HandCursor.init({
   grab: {
     enabled: true,
     selector: '[data-hc-grab]',   // extra handles a library does not advertise
-    threshold: 56,                // px before a hold counts as a drag, not a click
+    tapDuration: 400,             // ms a pinch can last and still count as a tap
     cursors: ['grab', 'move', …], // computed cursors that mean "this moves"
     touchAction: true,            // treat touch-action:none as a handle
     html5: true,                  // synthesize dragstart/dragover/drop too
