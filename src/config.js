@@ -189,6 +189,19 @@ export const DEFAULTS = {
      * whole page rather than a handle.
      */
     touchAction: true,
+    /**
+     * Travel, in px, before a hold on an element is committed to being a drag
+     * rather than a press.
+     *
+     * Deliberately looser than `drag.threshold`, which governs scrolling. A
+     * held element already follows the hand from the first pixel, so letting it
+     * travel further before the gesture is *called* a drag costs nothing to
+     * look at, and buys back the room a pinch needs to settle on something that
+     * can be clicked as well as dragged. Below this a release is a click, with
+     * no limit on how far the hand wandered or how long it took — which is the
+     * rule a browser applies to a mouse.
+     */
+    threshold: 56,
     /** Synthesize the HTML5 dragstart/dragover/drop sequence for `draggable`. */
     html5: true,
     /**

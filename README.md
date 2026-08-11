@@ -200,6 +200,24 @@ left the element, it is carrying it. Dropping it partway through fires
 ancestors, so a card with any hover state at all — a lift, a shadow, a colour —
 visibly snaps out of it a beat after the pinch.
 
+### Clicking something that can also be dragged
+
+A button that doubles as a drag handle is the hard case, and it gets its own
+threshold. `grab.threshold` is looser than `drag.threshold` because the two are
+protecting different things: the scroll threshold stops the page moving under a
+tap, while this one only decides whether a gesture already carrying an element
+counts as a drag or a press. The element follows the hand from the first pixel
+either way, so the extra room costs nothing to look at, and all of it comes back
+as tolerance for a click.
+
+Below that threshold, letting go is a click — with no limit on how far the hand
+wandered or how long it took, as long as the press and the release belong to the
+same element. That is the rule a browser applies to a mouse, and it matters more
+here than there: a pinch held in mid-air drifts further than a finger on glass
+ever does, and `tap.maxTravel` used to count every pixel of that drift against
+the click. Raise `grab.threshold` if a deliberate press still reads as a drag;
+lower it if small drags are clicking.
+
 ### Why isn't my element draggable?
 
 Ask directly:
@@ -313,6 +331,7 @@ HandCursor.init({
   grab: {
     enabled: true,
     selector: '[data-hc-grab]',   // extra handles a library does not advertise
+    threshold: 56,                // px before a hold counts as a drag, not a click
     cursors: ['grab', 'move', …], // computed cursors that mean "this moves"
     touchAction: true,            // treat touch-action:none as a handle
     html5: true,                  // synthesize dragstart/dragover/drop too

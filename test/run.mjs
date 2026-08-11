@@ -732,6 +732,93 @@ for (const lenis of [false, true]) {
     JSON.stringify(clickOnDrag),
   );
 
+  // --- clicking something that can also be dragged --------------------------
+  //
+  // The hard case, and the reason grabs get their own threshold: a button that
+  // is also a drag handle. A pinch held in mid-air on a small target drifts
+  // further than a finger on glass ever would, and every pixel of that drift
+  // used to count against the click.
+  const wobble = await page.evaluate(async () => {
+    const el = document.getElementById('handle');
+    el.style.transform = '';
+    const from = await window.spot('handle');
+    window.grabLog = [];
+
+    for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
+    window.feedNow(...window.toCamera(from.x, from.y), true);
+    // Out to 45px and back — past the old 32px allowance, inside the new one.
+    for (const d of [0, 14, 28, 38, 45, 38, 26, 14, 6]) {
+      window.feedNow(...window.toCamera(from.x + d, from.y), true);
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    window.feedNow(...window.toCamera(from.x + 6, from.y), false);
+    await new Promise((r) => setTimeout(r, 150));
+    el.style.transform = '';
+    return window.grabLog;
+  });
+  check(
+    'a wobbly press on a draggable still clicks it',
+    wobble.includes('click'),
+    `drifted 45px and got ${JSON.stringify(wobble)}`,
+  );
+
+  // Holding still for over a second is not a drag, so it is a click — which is
+  // what a browser does. `tap.maxDuration` is there to stop a long *scroll*
+  // ending in one, and nothing here is scrolling.
+  const lingered = await page.evaluate(async () => {
+    const el = document.getElementById('handle');
+    el.style.transform = '';
+    const from = await window.spot('handle');
+    window.grabLog = [];
+
+    for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
+    window.feedNow(...window.toCamera(from.x, from.y), true);
+    const until = performance.now() + 1200;
+    while (performance.now() < until) {
+      window.feedNow(...window.toCamera(from.x + 3, from.y), true);
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    window.feedNow(...window.toCamera(from.x + 3, from.y), false);
+    await new Promise((r) => setTimeout(r, 150));
+    el.style.transform = '';
+    return window.grabLog;
+  });
+  check(
+    'a slow, deliberate press on a draggable still clicks it',
+    lingered.includes('click'),
+    `held 1.2s and got ${JSON.stringify(lingered)}`,
+  );
+
+  // Letting go somewhere else is not a click, however short the gesture — the
+  // press and the release have to belong to the same element.
+  const elsewhere = await page.evaluate(async () => {
+    await window.spot('card');
+    const card = document.getElementById('card');
+    const r = card.getBoundingClientRect();
+    let clicked = 0;
+    const count = () => { clicked += 1; };
+    card.addEventListener('click', count);
+
+    const x = r.left + r.width / 2;
+    const y = r.bottom - 8;
+    for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(x, y), false);
+    window.feedNow(...window.toCamera(x, y), true);
+    // 40px down, which is under the grab threshold but off the card entirely.
+    for (const d of [10, 20, 30, 40]) {
+      window.feedNow(...window.toCamera(x, y + d), true);
+      await new Promise((rs) => setTimeout(rs, 40));
+    }
+    window.feedNow(...window.toCamera(x, y + 40), false);
+    await new Promise((rs) => setTimeout(rs, 150));
+    card.removeEventListener('click', count);
+    return { clicked, landedOn: document.elementFromPoint(x, y + 40)?.id };
+  });
+  check(
+    'letting go off the element does not click it',
+    elsewhere.clicked === 0 && elsewhere.landedOn !== 'card',
+    JSON.stringify(elsewhere),
+  );
+
   // --- the HTML5 kind: its own event sequence, which no pointer event implies --
   // Both read after a single scroll: measuring the second one separately would
   // scroll the page again and leave the first set of coordinates pointing

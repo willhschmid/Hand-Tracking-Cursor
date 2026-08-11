@@ -139,8 +139,8 @@ export class TouchEmulator {
   }
 
   /** True once the pinch has moved far enough, and been held long enough. */
-  pastDragGate(x, y, now) {
-    const { threshold, holdDelay, holdEscape } = this.options.drag;
+  pastDragGate(x, y, now, threshold) {
+    const { holdDelay, holdEscape } = this.options.drag;
     const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
     // Closing the pinch moves the hand, so the first moments of every press
     // carry drift that has nothing to do with intent. Waiting that out is what
@@ -170,7 +170,11 @@ export class TouchEmulator {
     // with no threshold in the way. The gate below still runs, but only to
     // decide whether this ends as a click and when the HTML5 drag opens.
     if (this.grab) {
-      if (!this.dragging && this.pastDragGate(x, y, now)) {
+      // A held element gets more room than a scroll before the gesture is
+      // called a drag. It is already following the hand, so the extra travel
+      // costs nothing to look at — and it all comes back as room to click
+      // something that can be dragged as well as pressed.
+      if (!this.dragging && this.pastDragGate(x, y, now, this.options.grab.threshold)) {
         this.dragging = true;
         // Hover deliberately stays. The cursor has not left the element — it is
         // carrying it — and a mouse keeps `:hover` on what it drags. Dropping
@@ -186,7 +190,7 @@ export class TouchEmulator {
     }
 
     if (!this.dragging) {
-      if (!this.pastDragGate(x, y, now)) return;
+      if (!this.pastDragGate(x, y, now, this.options.drag.threshold)) return;
       this.dragging = true;
       this.leaveHovered(x, y);
       // Fall through, so this frame scrolls by its own delta only. The distance
@@ -277,7 +281,14 @@ export class TouchEmulator {
       // A press that never became a drag is a click, exactly as it is with a
       // mouse. The pointerdown that opened the grab already stands in for the
       // one a tap would have fired, so only the click itself is left.
-      if (!wasDrag && this.isTap(origin, x, y, now)) this.click(grab.pressed, origin.x, origin.y);
+      // No travel or duration limit, unlike a tap. A browser has none either:
+      // press and release on the same element and the click fires however far
+      // the pointer wandered in between. The limits exist to stop a *scroll*
+      // ending in a click, and nothing here is scrolling — so the only question
+      // left is whether this became a drag.
+      if (!wasDrag && grab.clicks(internal ? null : el)) {
+        this.click(grab.pressed, origin.x, origin.y);
+      }
       this.onGrab?.({ type: 'end', target: grab.node, dropped, x, y });
       return;
     }

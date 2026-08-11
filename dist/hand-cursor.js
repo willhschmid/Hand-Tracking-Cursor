@@ -214,6 +214,19 @@ var HandCursor = (() => {
        * whole page rather than a handle.
        */
       touchAction: true,
+      /**
+       * Travel, in px, before a hold on an element is committed to being a drag
+       * rather than a press.
+       *
+       * Deliberately looser than `drag.threshold`, which governs scrolling. A
+       * held element already follows the hand from the first pixel, so letting it
+       * travel further before the gesture is *called* a drag costs nothing to
+       * look at, and buys back the room a pinch needs to settle on something that
+       * can be clicked as well as dragged. Below this a release is a click, with
+       * no limit on how far the hand wandered or how long it took — which is the
+       * rule a browser applies to a mouse.
+       */
+      threshold: 56,
       /** Synthesize the HTML5 dragstart/dragover/drop sequence for `draggable`. */
       html5: true,
       /**
@@ -1085,6 +1098,18 @@ var HandCursor = (() => {
       }
       this.canDrop = under ? !fireDrag(under, "dragover", x, y, this.dataTransfer) : false;
     }
+    /**
+     * Whether letting go over `under` counts as a click on what was pressed.
+     *
+     * The browser's own rule, near enough: a click needs the press and the
+     * release to belong to the same element. Wandering across it in between does
+     * not matter, and on a hand that is holding a pinch in mid-air it is going to
+     * happen.
+     */
+    clicks(under) {
+      if (!under) return false;
+      return this.pressed === under || this.pressed.contains(under) || under.contains(this.pressed);
+    }
     /** Let go. Returns whether the element was dropped on something. */
     end(x, y, under) {
       const to = under || (this.pressed.isConnected ? this.pressed : document);
@@ -1615,8 +1640,8 @@ var HandCursor = (() => {
       if (immediate) this.beginGrab(x, y, el);
     }
     /** True once the pinch has moved far enough, and been held long enough. */
-    pastDragGate(x, y, now) {
-      const { threshold, holdDelay, holdEscape } = this.options.drag;
+    pastDragGate(x, y, now, threshold) {
+      const { holdDelay, holdEscape } = this.options.drag;
       const travel = Math.hypot(x - this.origin.x, y - this.origin.y);
       if (travel < holdEscape && now - this.origin.t < holdDelay) return false;
       return travel >= threshold;
@@ -1631,7 +1656,7 @@ var HandCursor = (() => {
       const keep = this.options.drag.velocityWindow * 2;
       while (this.samples.length > 2 && now - this.samples[0].t > keep) this.samples.shift();
       if (this.grab) {
-        if (!this.dragging && this.pastDragGate(x, y, now)) {
+        if (!this.dragging && this.pastDragGate(x, y, now, this.options.grab.threshold)) {
           this.dragging = true;
           this.grab.start(x, y);
         }
@@ -1639,7 +1664,7 @@ var HandCursor = (() => {
         return;
       }
       if (!this.dragging) {
-        if (!this.pastDragGate(x, y, now)) return;
+        if (!this.pastDragGate(x, y, now, this.options.drag.threshold)) return;
         this.dragging = true;
         this.leaveHovered(x, y);
       }
@@ -1703,7 +1728,9 @@ var HandCursor = (() => {
         this.dragging = false;
         const { el, internal } = this.resolve(x, y);
         const dropped = grab.end(x, y, internal ? null : el);
-        if (!wasDrag && this.isTap(origin, x, y, now)) this.click(grab.pressed, origin.x, origin.y);
+        if (!wasDrag && grab.clicks(internal ? null : el)) {
+          this.click(grab.pressed, origin.x, origin.y);
+        }
         this.onGrab?.({ type: "end", target: grab.node, dropped, x, y });
         return;
       }

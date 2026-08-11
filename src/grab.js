@@ -191,6 +191,21 @@ export class Grab {
     this.canDrop = under ? !fireDrag(under, 'dragover', x, y, this.dataTransfer) : false;
   }
 
+  /**
+   * Whether letting go over `under` counts as a click on what was pressed.
+   *
+   * The browser's own rule, near enough: a click needs the press and the
+   * release to belong to the same element. Wandering across it in between does
+   * not matter, and on a hand that is holding a pinch in mid-air it is going to
+   * happen.
+   */
+  clicks(under) {
+    if (!under) return false;
+    return (
+      this.pressed === under || this.pressed.contains(under) || under.contains(this.pressed)
+    );
+  }
+
   /** Let go. Returns whether the element was dropped on something. */
   end(x, y, under) {
     const to = under || (this.pressed.isConnected ? this.pressed : document);
