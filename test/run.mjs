@@ -678,6 +678,29 @@ for (const lenis of [false, true]) {
     `hand moved ${immediate.nudge}px, element moved ${immediate.moved}px`,
   );
 
+  // --- a press still lands when the library lifts the element away ----------
+  const lifted = await page.evaluate(async () => {
+    const from = await window.spot('lifted');
+    window.grabLog = [];
+    for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
+    window.feedNow(...window.toCamera(from.x, from.y), true);
+    await new Promise((r) => setTimeout(r, 80));
+    const covering = document.elementFromPoint(from.x, from.y)?.id ?? '(overlay)';
+    window.feedNow(...window.toCamera(from.x, from.y), false);
+    await new Promise((r) => setTimeout(r, 150));
+    return { log: window.grabLog, covering };
+  });
+  check(
+    'the fixture really does cover the element it lifted',
+    lifted.covering !== 'lifted',
+    `expected a clone over it, found ${lifted.covering}`,
+  );
+  check(
+    'a press lands even when the library covers the element with a clone',
+    lifted.log.includes('lifted-click'),
+    JSON.stringify(lifted.log),
+  );
+
   // --- and it keeps its hover state the whole way ---------------------------
   const hover = await page.evaluate(async () => {
     const el = document.getElementById('handle');
@@ -721,7 +744,7 @@ for (const lenis of [false, true]) {
     window.grabLog = [];
     // Comfortably past `grab.tapDuration`, so this is a drag by the only
     // measure that counts.
-    await window.pinchDrag({ x: from.x, y: from.y, dx: 120, steps: 24 });
+    await window.pinchDrag({ x: from.x, y: from.y, dx: 120, steps: 32 });
     await new Promise((r) => setTimeout(r, 200));
     el.style.transform = '';
     return window.grabLog;
@@ -775,7 +798,7 @@ for (const lenis of [false, true]) {
 
     for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
     window.feedNow(...window.toCamera(from.x, from.y), true);
-    const until = performance.now() + 900;
+    const until = performance.now() + 1100;
     while (performance.now() < until) {
       window.feedNow(...window.toCamera(from.x + 3, from.y), true);
       await new Promise((r) => setTimeout(r, 40));
@@ -788,7 +811,7 @@ for (const lenis of [false, true]) {
   check(
     'a pinch held past the tap window is a drag, not a click',
     !lingered.includes('click'),
-    `held 900ms barely moving and got ${JSON.stringify(lingered)}`,
+    `held 1.1s barely moving and got ${JSON.stringify(lingered)}`,
   );
 
   // Letting go somewhere else is not a click, however short the gesture — the
@@ -841,6 +864,10 @@ for (const lenis of [false, true]) {
       y: from.y,
       dx: to.x - from.x,
       dy: to.y - from.y,
+      // Long enough to be a drag by the only measure there is. Under
+      // `grab.tapDuration` this would be a press, and a press never opens the
+      // HTML5 sequence — the same as `mousedown` alone in a browser.
+      steps: 30,
     });
     await new Promise((r) => setTimeout(r, 200));
     return window.dragLog;

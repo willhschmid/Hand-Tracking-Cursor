@@ -30,6 +30,10 @@
          mouse, or the element flashes partway through the gesture. */
       #handle:hover { background: rgb(0, 202, 72); }
       #plain { margin-top: 12px; width: 200px; height: 80px; background: #fdd; }
+      /* A handle whose library lifts it into an overlay on press, which is what
+         dnd-kit and friends do. What sits under the cursor from then on is a
+         clone the page made, not the thing that was pressed. */
+      #lifted { margin-top: 12px; width: 200px; height: 80px; background: #ffd; cursor: grab; }
     </style>
   </head>
   <body>
@@ -42,6 +46,7 @@
       <div id="dropzone">drop zone</div>
       <div id="handle">library handle</div>
       <div id="plain">not draggable</div>
+      <div id="lifted">lifted into an overlay</div>
     </div>
 
     <script src="../dist/hand-cursor.js" data-manual></script>
@@ -94,6 +99,23 @@
         });
         document.addEventListener('pointerup', () => {
           from = null;
+        });
+      }
+
+      {
+        const lifted = document.getElementById('lifted');
+        let overlay = null;
+        lifted.addEventListener('click', () => window.grabLog.push('lifted-click'));
+        lifted.addEventListener('pointerdown', (e) => {
+          overlay = document.createElement('div');
+          overlay.style.cssText =
+            `position:fixed;left:${e.clientX - 60}px;top:${e.clientY - 30}px;` +
+            'width:120px;height:60px;z-index:2147483646;background:#cc9';
+          document.body.appendChild(overlay);
+        });
+        document.addEventListener('pointerup', () => {
+          overlay?.remove();
+          overlay = null;
         });
       }
 

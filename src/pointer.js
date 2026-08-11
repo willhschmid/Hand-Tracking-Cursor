@@ -62,6 +62,7 @@ export class TouchEmulator {
     // one has started.
     this.grabTarget = null;
     this.grab = null;
+    this.debug = debug;
     this.scroller = new ScrollRunner(options, debug);
   }
 
@@ -279,6 +280,11 @@ export class TouchEmulator {
       this.dragging = false;
       const { el, internal } = this.resolve(x, y);
       const dropped = grab.end(x, y, internal ? null : el);
+      this.debug?.recordGesture({
+        ms: now - origin.t,
+        travel: Math.hypot(x - origin.x, y - origin.y),
+        verdict: wasDrag ? 'drag' : 'press',
+      });
       // A press that never became a drag is a click, exactly as it is with a
       // mouse. The pointerdown that opened the grab already stands in for the
       // one a tap would have fired, so only the click itself is left.
@@ -286,7 +292,7 @@ export class TouchEmulator {
       // Distance never enters into it, and a browser does not consult it
       // either: press and release on the same element and the click fires
       // however far the pointer wandered in between.
-      if (!wasDrag && grab.clicks(internal ? null : el)) {
+      if (!wasDrag && grab.clicks(x, y, internal ? null : el)) {
         this.click(grab.pressed, origin.x, origin.y);
       }
       this.onGrab?.({ type: 'end', target: grab.node, dropped, x, y });

@@ -200,12 +200,21 @@ export const DEFAULTS = {
      * a tap by how far it travelled meant a deliberate press on something
      * draggable kept being read as a drag.
      *
+     * It has to be generous, because it is not timing the gesture you make. It
+     * times the gap between the pinch closing past `pinch.on` and opening past
+     * `pinch.off`, and that band is deliberately wide so a hovering hand does
+     * not chatter — so the fingers have to travel back out through all of it
+     * before the release even registers. A tap that feels instantaneous is
+     * routinely half a second by the time both edges have been crossed.
+     *
+     * The `gesture` row in the diagnostics panel reports the real figure for
+     * your own hand, which is the only way to set this honestly.
+     *
      * The trade is that a genuinely quick flick — an element thrown some
      * distance and released inside this window — also registers as a tap.
-     * Lower this if that happens; raise it if unhurried presses are not
-     * landing.
+     * Lower this if that happens; raise it if presses are not landing.
      */
-    tapDuration: 400,
+    tapDuration: 700,
     /** Synthesize the HTML5 dragstart/dragover/drop sequence for `draggable`. */
     html5: true,
     /**

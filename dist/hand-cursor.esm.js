@@ -195,12 +195,21 @@ var DEFAULTS = {
      * a tap by how far it travelled meant a deliberate press on something
      * draggable kept being read as a drag.
      *
+     * It has to be generous, because it is not timing the gesture you make. It
+     * times the gap between the pinch closing past `pinch.on` and opening past
+     * `pinch.off`, and that band is deliberately wide so a hovering hand does
+     * not chatter — so the fingers have to travel back out through all of it
+     * before the release even registers. A tap that feels instantaneous is
+     * routinely half a second by the time both edges have been crossed.
+     *
+     * The `gesture` row in the diagnostics panel reports the real figure for
+     * your own hand, which is the only way to set this honestly.
+     *
      * The trade is that a genuinely quick flick — an element thrown some
      * distance and released inside this window — also registers as a tap.
-     * Lower this if that happens; raise it if unhurried presses are not
-     * landing.
+     * Lower this if that happens; raise it if presses are not landing.
      */
-    tapDuration: 400,
+    tapDuration: 700,
     /** Synthesize the HTML5 dragstart/dragover/drop sequence for `draggable`. */
     html5: true,
     /**
@@ -1073,16 +1082,27 @@ var Grab = class {
     this.canDrop = under ? !fireDrag(under, "dragover", x, y, this.dataTransfer) : false;
   }
   /**
-   * Whether letting go over `under` counts as a click on what was pressed.
+   * Whether letting go here counts as a click on what was pressed.
    *
-   * The browser's own rule, near enough: a click needs the press and the
-   * release to belong to the same element. Wandering across it in between does
-   * not matter, and on a hand that is holding a pinch in mid-air it is going to
-   * happen.
+   * Asked of the geometry first, and only then of the hit test. A drag library
+   * routinely lifts the element into an overlay, or leaves a placeholder in the
+   * layout and renders a clone under the cursor — so what `elementFromPoint`
+   * returns at release is very often something the page built a moment ago and
+   * not anything that was pressed. Demanding the same element back means a
+   * quick pinch on exactly those elements never registers as a click, which
+   * looks from the outside like every press being read as a drag.
+   *
+   * An element that has been lifted out of the layout entirely has no box left
+   * to test, and nothing to say about where it went. That gets the benefit of
+   * the doubt: the gesture was short enough to be a press, so it is one.
    */
-  clicks(under) {
-    if (!under) return false;
-    return this.pressed === under || this.pressed.contains(under) || under.contains(this.pressed);
+  clicks(x, y, under) {
+    if (under && (this.pressed === under || this.pressed.contains(under) || under.contains(this.pressed))) {
+      return true;
+    }
+    const box = this.pressed.getBoundingClientRect?.();
+    if (!box || box.width === 0 && box.height === 0) return true;
+    return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
   }
   /** Let go. Returns whether the element was dropped on something. */
   end(x, y, under) {
@@ -1550,6 +1570,7 @@ var TouchEmulator = class {
     this.scrolled = false;
     this.grabTarget = null;
     this.grab = null;
+    this.debug = debug;
     this.scroller = new ScrollRunner(options, debug);
   }
   /**
@@ -1702,7 +1723,12 @@ var TouchEmulator = class {
       this.dragging = false;
       const { el, internal } = this.resolve(x, y);
       const dropped = grab.end(x, y, internal ? null : el);
-      if (!wasDrag && grab.clicks(internal ? null : el)) {
+      this.debug?.recordGesture({
+        ms: now - origin.t,
+        travel: Math.hypot(x - origin.x, y - origin.y),
+        verdict: wasDrag ? "drag" : "press"
+      });
+      if (!wasDrag && grab.clicks(x, y, internal ? null : el)) {
         this.click(grab.pressed, origin.x, origin.y);
       }
       this.onGrab?.({ type: "end", target: grab.node, dropped, x, y });
@@ -2069,7 +2095,11 @@ var ROWS = [
     "commit",
     "how far the browser\u2019s reported scroll offset trails what was just written, and how often it had not moved at all. Anything but 0 means this platform commits scrolls asynchronously"
   ],
-  ["target", "what is being scrolled, and whether its CSS asked for smooth"]
+  ["target", "what is being scrolled, and whether its CSS asked for smooth"],
+  [
+    "gesture",
+    "the last press: how long the pinch was actually held, how far the hand travelled, and what it was read as. The duration is the one to check against grab.tapDuration when presses are landing as drags"
+  ]
 ];
 var DebugOverlay = class {
   constructor() {
@@ -2089,6 +2119,7 @@ var DebugOverlay = class {
     this.running = false;
     this.targetLabel = "";
     this.targetSmooth = false;
+    this.gestureLabel = "";
     this.trace = [];
     this.traceNode = null;
     this.lastScrollTop = null;
@@ -2161,6 +2192,18 @@ var DebugOverlay = class {
   endTrace() {
     this.tracing = false;
   }
+  /**
+   * A finished press, with the two numbers that decide what it counted as.
+   *
+   * Worth showing because neither is guessable from the outside. The duration
+   * is not the gesture you make — it runs from the pinch closing past
+   * `pinch.on` to it opening past `pinch.off`, so it carries the whole width of
+   * the hysteresis band — and the travel is whatever a hand holding a pinch in
+   * mid-air happens to drift.
+   */
+  recordGesture({ ms, travel, verdict }) {
+    this.gestureLabel = `${Math.round(ms)}ms ${Math.round(travel)}px ${verdict}`;
+  }
   recordTarget(node, smooth) {
     const name = node === document.scrollingElement || node === document.documentElement ? "page" : node.tagName.toLowerCase() + (node.id ? `#${node.id}` : "");
     this.targetLabel = `${name} ${smooth ? "SMOOTH" : "auto"}`;
@@ -2216,6 +2259,7 @@ var DebugOverlay = class {
       this.commitLag.mean > 1
     );
     this.set("target", this.targetLabel || "\u2014", Boolean(this.targetSmooth));
+    this.set("gesture", this.gestureLabel || "\u2014");
     if (this.trace.length) {
       const first = this.trace.findIndex((d) => d !== 0);
       const active = first === -1 ? this.trace : this.trace.slice(first);

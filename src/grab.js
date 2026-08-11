@@ -192,18 +192,30 @@ export class Grab {
   }
 
   /**
-   * Whether letting go over `under` counts as a click on what was pressed.
+   * Whether letting go here counts as a click on what was pressed.
    *
-   * The browser's own rule, near enough: a click needs the press and the
-   * release to belong to the same element. Wandering across it in between does
-   * not matter, and on a hand that is holding a pinch in mid-air it is going to
-   * happen.
+   * Asked of the geometry first, and only then of the hit test. A drag library
+   * routinely lifts the element into an overlay, or leaves a placeholder in the
+   * layout and renders a clone under the cursor — so what `elementFromPoint`
+   * returns at release is very often something the page built a moment ago and
+   * not anything that was pressed. Demanding the same element back means a
+   * quick pinch on exactly those elements never registers as a click, which
+   * looks from the outside like every press being read as a drag.
+   *
+   * An element that has been lifted out of the layout entirely has no box left
+   * to test, and nothing to say about where it went. That gets the benefit of
+   * the doubt: the gesture was short enough to be a press, so it is one.
    */
-  clicks(under) {
-    if (!under) return false;
-    return (
-      this.pressed === under || this.pressed.contains(under) || under.contains(this.pressed)
-    );
+  clicks(x, y, under) {
+    if (
+      under &&
+      (this.pressed === under || this.pressed.contains(under) || under.contains(this.pressed))
+    ) {
+      return true;
+    }
+    const box = this.pressed.getBoundingClientRect?.();
+    if (!box || (box.width === 0 && box.height === 0)) return true;
+    return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
   }
 
   /** Let go. Returns whether the element was dropped on something. */

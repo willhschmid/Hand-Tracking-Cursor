@@ -59,6 +59,12 @@ const ROWS = [
       'this platform commits scrolls asynchronously',
   ],
   ['target', 'what is being scrolled, and whether its CSS asked for smooth'],
+  [
+    'gesture',
+    'the last press: how long the pinch was actually held, how far the hand ' +
+      'travelled, and what it was read as. The duration is the one to check ' +
+      'against grab.tapDuration when presses are landing as drags',
+  ],
 ];
 
 export class DebugOverlay {
@@ -80,6 +86,7 @@ export class DebugOverlay {
     this.running = false;
     this.targetLabel = '';
     this.targetSmooth = false;
+    this.gestureLabel = '';
 
     // Per-repaint scroll deltas from the most recent drag. Aggregates say how
     // bad it is; only the sequence says *what shape* the badness is, and the
@@ -172,6 +179,19 @@ export class DebugOverlay {
     this.tracing = false;
   }
 
+  /**
+   * A finished press, with the two numbers that decide what it counted as.
+   *
+   * Worth showing because neither is guessable from the outside. The duration
+   * is not the gesture you make — it runs from the pinch closing past
+   * `pinch.on` to it opening past `pinch.off`, so it carries the whole width of
+   * the hysteresis band — and the travel is whatever a hand holding a pinch in
+   * mid-air happens to drift.
+   */
+  recordGesture({ ms, travel, verdict }) {
+    this.gestureLabel = `${Math.round(ms)}ms ${Math.round(travel)}px ${verdict}`;
+  }
+
   recordTarget(node, smooth) {
     const name =
       node === document.scrollingElement || node === document.documentElement
@@ -244,6 +264,7 @@ export class DebugOverlay {
       this.commitLag.mean > 1,
     );
     this.set('target', this.targetLabel || '—', Boolean(this.targetSmooth));
+    this.set('gesture', this.gestureLabel || '—');
 
     if (this.trace.length) {
       // Trimmed to the part where the page was actually moving.

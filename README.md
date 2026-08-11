@@ -216,10 +216,21 @@ The one thing still checked is that the press and the release belong to the same
 element — letting go somewhere else is not a click, the same rule a browser
 applies to a mouse.
 
+`grab.tapDuration` has to be generous, because it is not timing the gesture you
+make. It times the gap between the pinch closing past `pinch.on` and opening
+past `pinch.off` — and that band is deliberately wide, so a hovering hand does
+not chatter. The fingers have to travel all the way back out through it before
+the release even registers, which makes a tap that feels instantaneous routinely
+half a second on the clock.
+
+Do not guess at it. Put `handcursor-debug` in the URL, press the thing a few
+times, and read the `gesture` row: it reports the duration, the travel and the
+verdict for the last press. If presses are showing up as `drag`, that row says
+by how much.
+
 The trade is at the other end: a genuinely quick flick, an element thrown some
 distance and released inside the window, also registers as a click. Lower
-`grab.tapDuration` if that happens, raise it if unhurried presses are not
-landing.
+`grab.tapDuration` if that happens.
 
 ### Why isn't my element draggable?
 
@@ -334,7 +345,7 @@ HandCursor.init({
   grab: {
     enabled: true,
     selector: '[data-hc-grab]',   // extra handles a library does not advertise
-    tapDuration: 400,             // ms a pinch can last and still count as a tap
+    tapDuration: 700,             // ms a pinch can last and still count as a tap
     cursors: ['grab', 'move', …], // computed cursors that mean "this moves"
     touchAction: true,            // treat touch-action:none as a handle
     html5: true,                  // synthesize dragstart/dragover/drop too
@@ -473,6 +484,7 @@ which matters on a phone — and a panel appears in the top left:
 | `blocked` | share of repaints later than 32ms — turns yellow above 20% |
 | `scroll` | scroll writes per second, and the mean step |
 | `target` | what is being scrolled, and whether its CSS asked for smooth |
+| `gesture` | the last press: how long the pinch was held, how far the hand moved, and what it was read as |
 
 Read it while dragging:
 
