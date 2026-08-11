@@ -114,6 +114,11 @@ check(
   mini.width === 106 && mini.height === 106,
   `${mini.width}x${mini.height}`,
 );
+check(
+  'minimized trackpad keeps the 16px margin',
+  mini.left === 16 && 700 - mini.bottom === 16,
+  `left ${mini.left}, bottom ${700 - mini.bottom}`,
+);
 const illustration = await page.evaluate(() => {
   const img = document
     .querySelector('[data-hand-cursor]')
@@ -406,6 +411,11 @@ check(
   'live trackpad keeps the 260x200 frame',
   live.width === 260 && live.height === 200,
   `${live.width}x${live.height}`,
+);
+check(
+  'live trackpad keeps the 16px margin',
+  live.left === 16 && 700 - live.bottom === 16,
+  `left ${live.left}, bottom ${700 - live.bottom}`,
 );
 check('the camera-off control appears when live', cornerLeft.display !== 'none', cornerLeft.display);
 check(
