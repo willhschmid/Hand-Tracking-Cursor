@@ -195,21 +195,21 @@ var DEFAULTS = {
      * a tap by how far it travelled meant a deliberate press on something
      * draggable kept being read as a drag.
      *
-     * It has to be generous, because it is not timing the gesture you make. It
-     * times the gap between the pinch closing past `pinch.on` and opening past
-     * `pinch.off`, and that band is deliberately wide so a hovering hand does
-     * not chatter — so the fingers have to travel back out through all of it
-     * before the release even registers. A tap that feels instantaneous is
-     * routinely half a second by the time both edges have been crossed.
+     * It runs from the pinch closing past `pinch.on` to it opening past
+     * `pinch.off`, not from the gesture you think you are making — that band is
+     * deliberately wide so a hovering hand does not chatter, and the fingers
+     * have to travel back out through all of it before the release registers.
+     * So the number is a little longer than the tap feels.
+     *
+     * Everything above this is a drag and never clicks, which is the half that
+     * has to be right: picking a card up, moving it and putting it down must
+     * not also activate it. Below it, a press.
      *
      * The `gesture` row in the diagnostics panel reports the real figure for
-     * your own hand, which is the only way to set this honestly.
-     *
-     * The trade is that a genuinely quick flick — an element thrown some
-     * distance and released inside this window — also registers as a tap.
-     * Lower this if that happens; raise it if presses are not landing.
+     * your own hand, which is the only way to set this honestly. Raise it if
+     * deliberate presses are being read as drags.
      */
-    tapDuration: 700,
+    tapDuration: 300,
     /**
      * How long to wait after letting go before firing the click, in ms.
      *

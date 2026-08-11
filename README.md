@@ -216,21 +216,16 @@ The one thing still checked is that the press and the release belong to the same
 element — letting go somewhere else is not a click, the same rule a browser
 applies to a mouse.
 
-`grab.tapDuration` has to be generous, because it is not timing the gesture you
-make. It times the gap between the pinch closing past `pinch.on` and opening
-past `pinch.off` — and that band is deliberately wide, so a hovering hand does
-not chatter. The fingers have to travel all the way back out through it before
-the release even registers, which makes a tap that feels instantaneous routinely
-half a second on the clock.
+`grab.tapDuration` measures from the pinch closing past `pinch.on` to it opening
+past `pinch.off`, not the gesture you think you are making. That band is
+deliberately wide so a hovering hand does not chatter, and the fingers have to
+travel back out through all of it before the release registers — so the number
+on the clock runs a little longer than the tap feels.
 
 Do not guess at it. Put `handcursor-debug` in the URL, press the thing a few
 times, and read the `gesture` row: it reports the duration, the travel and the
-verdict for the last press. If presses are showing up as `drag`, that row says
-by how much.
-
-The trade is at the other end: a genuinely quick flick, an element thrown some
-distance and released inside the window, also registers as a click. Lower
-`grab.tapDuration` if that happens.
+verdict for the last press. If deliberate presses are showing up as `drag`, that
+row says by how much.
 
 ### Why the click arrives a moment late
 
@@ -365,7 +360,7 @@ HandCursor.init({
   grab: {
     enabled: true,
     selector: '[data-hc-grab]',   // extra handles a library does not advertise
-    tapDuration: 700,             // ms a pinch can last and still count as a tap
+    tapDuration: 300,             // ms a pinch can last and still count as a tap
     clickDelay: 80,               // ms to wait after release before the click
     cursors: ['grab', 'move', …], // computed cursors that mean "this moves"
     touchAction: true,            // treat touch-action:none as a handle
