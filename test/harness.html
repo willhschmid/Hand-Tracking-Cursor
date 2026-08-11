@@ -34,6 +34,7 @@
          dnd-kit and friends do. What sits under the cursor from then on is a
          clone the page made, not the thing that was pressed. */
       #lifted { margin-top: 12px; width: 200px; height: 80px; background: #ffd; cursor: grab; }
+      #gsapcard { margin-top: 12px; width: 200px; height: 80px; background: #def; }
     </style>
   </head>
   <body>
@@ -47,6 +48,7 @@
       <div id="handle">library handle</div>
       <div id="plain">not draggable</div>
       <div id="lifted">lifted into an overlay</div>
+      <div id="gsapcard">gsap draggable</div>
     </div>
 
     <script src="../dist/hand-cursor.js" data-manual></script>
@@ -118,6 +120,38 @@
           overlay = null;
         });
       }
+
+      /*
+       * A real GSAP Draggable, loaded on ?gsap=1.
+       *
+       * Worth the weight of a real library in the suite: GSAP calls anything
+       * over 2px of pointer travel a drag, and then stops a click that arrives
+       * within 50ms of that drag ending. Both numbers are far too small for a
+       * hand — which no fixture written from imagination would have guessed.
+       */
+      window.gsapReady = (async () => {
+        if (new URLSearchParams(location.search).get('gsap') !== '1') return false;
+        const load = (src) =>
+          new Promise((res, rej) => {
+            const el = document.createElement('script');
+            el.src = src;
+            el.onload = res;
+            el.onerror = rej;
+            document.head.appendChild(el);
+          });
+        await load('/node_modules/gsap/dist/gsap.min.js');
+        await load('/node_modules/gsap/dist/Draggable.min.js');
+        window.gsap.registerPlugin(window.Draggable);
+        window.gsapLog = [];
+        const card = document.getElementById('gsapcard');
+        card.addEventListener('click', () => window.gsapLog.push('click'));
+        window.Draggable.create(card, {
+          type: 'x,y',
+          onPress() { window.gsapLog.push('press'); },
+          onRelease() { window.gsapLog.push('release'); },
+        });
+        return true;
+      })();
 
       let clicks = 0;
       document.getElementById('btn').addEventListener('click', () => {

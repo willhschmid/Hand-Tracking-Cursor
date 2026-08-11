@@ -1016,6 +1016,66 @@ for (const lenis of [false, true]) {
   );
 }
 
+// ----------------------------------------------------- a real drag library --
+//
+// GSAP's Draggable, loaded for real rather than imitated, because the numbers
+// that matter here could not have been guessed. It calls anything over 2px of
+// pointer travel a drag, and then stops any click arriving within 50ms of that
+// drag ending. A mouse clears neither bar; a hand holding a pinch in mid-air
+// clears both on every single press, so every press was being swallowed.
+
+{
+  const gsapPage = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+  const errors = [];
+  gsapPage.on('pageerror', (error) => errors.push(error.message));
+  await gsapPage.goto(`http://localhost:${PORT}/test/harness.html?gsap=1`, {
+    waitUntil: 'load',
+  });
+  const loaded = await gsapPage.evaluate(() => window.gsapReady);
+
+  const press = await gsapPage.evaluate(async () => {
+    const from = await window.spot('gsapcard');
+    window.gsapLog = [];
+    for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
+    window.feedNow(...window.toCamera(from.x, from.y), true);
+    // 30px of drift, which is nothing for a hand and fifteen times GSAP's bar.
+    for (let i = 1; i <= 4; i++) {
+      window.feedNow(...window.toCamera(from.x + i * 7.5, from.y), true);
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    window.feedNow(...window.toCamera(from.x + 30, from.y), false);
+    await new Promise((r) => setTimeout(r, 300));
+    return window.gsapLog;
+  });
+
+  const dragged = await gsapPage.evaluate(async () => {
+    const card = document.getElementById('gsapcard');
+    const from = await window.spot('gsapcard');
+    const before = card.getBoundingClientRect().left;
+    window.gsapLog = [];
+    await window.pinchDrag({ x: from.x, y: from.y, dx: 150, steps: 30 });
+    await new Promise((r) => setTimeout(r, 300));
+    return {
+      log: window.gsapLog,
+      moved: Math.round(card.getBoundingClientRect().left - before),
+    };
+  });
+  await gsapPage.close();
+
+  check('GSAP Draggable is really loaded', loaded === true, String(loaded));
+  check(
+    'a press on a GSAP Draggable reaches its click handler',
+    press.includes('press') && press.includes('click'),
+    JSON.stringify(press),
+  );
+  check(
+    'a drag on a GSAP Draggable moves it and does not click it',
+    dragged.moved > 100 && !dragged.log.includes('click'),
+    JSON.stringify(dragged),
+  );
+  check('GSAP runs without errors', errors.length === 0, errors.join(' | '));
+}
+
 // ------------------------------------------- asynchronously committed scroll --
 //
 // On iOS the page's scroll offset lives in the UI process. A write is a message

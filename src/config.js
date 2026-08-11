@@ -215,6 +215,25 @@ export const DEFAULTS = {
      * Lower this if that happens; raise it if presses are not landing.
      */
     tapDuration: 700,
+    /**
+     * How long to wait after letting go before firing the click, in ms.
+     *
+     * Drag libraries suppress the click that follows a drag — otherwise
+     * dragging a card would also open it — and they decide "this was a drag"
+     * from a movement threshold measured in a pixel or two. A mouse clears
+     * that easily; a hand holding a pinch in mid-air never does. So every
+     * press looks like a drag to them, and the click they swallow is the one
+     * that was meant to work.
+     *
+     * They swallow it on a short timer, because with a mouse the click follows
+     * the release in the same tick. GSAP's Draggable, measured: anything over
+     * 2px of travel is a drag, and any click inside 50ms of that drag ending
+     * is stopped dead. Ours is not a mouse click and does not have to arrive
+     * in that tick — waiting out the window is the whole difference between a
+     * press that works and one that silently does nothing. On a gesture that
+     * already took half a second, the wait is not visible.
+     */
+    clickDelay: 80,
     /** Synthesize the HTML5 dragstart/dragover/drop sequence for `draggable`. */
     html5: true,
     /**

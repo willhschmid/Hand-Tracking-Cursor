@@ -293,7 +293,13 @@ export class TouchEmulator {
       // either: press and release on the same element and the click fires
       // however far the pointer wandered in between.
       if (!wasDrag && grab.clicks(x, y, internal ? null : el)) {
-        this.click(grab.pressed, origin.x, origin.y);
+        // Deliberately behind the release rather than with it — see
+        // `grab.clickDelay`, which exists so a drag library's own click
+        // suppression has expired by the time this lands.
+        const fire = () => this.click(grab.pressed, origin.x, origin.y);
+        const { clickDelay } = this.options.grab;
+        if (clickDelay > 0) setTimeout(fire, clickDelay);
+        else fire();
       }
       this.onGrab?.({ type: 'end', target: grab.node, dropped, x, y });
       return;

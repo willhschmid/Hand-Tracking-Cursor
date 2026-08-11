@@ -232,6 +232,26 @@ The trade is at the other end: a genuinely quick flick, an element thrown some
 distance and released inside the window, also registers as a click. Lower
 `grab.tapDuration` if that happens.
 
+### Why the click arrives a moment late
+
+Drag libraries suppress the click that follows a drag — otherwise dragging a
+card would also open it. They decide "this was a drag" from a movement
+threshold measured in a pixel or two, which a mouse clears easily and a hand
+holding a pinch in mid-air never does. So *every* press looks like a drag to
+them, and the click they swallow is the one that was meant to work.
+
+They swallow it on a short timer, because with a mouse the click follows the
+release in the same tick. GSAP's Draggable, read from its source and then
+measured: anything over **2px** of travel is a drag, and any click inside
+**50ms** of that drag ending is stopped dead. A press drifting 3px was enough to
+lose it; 0px was the only case that worked.
+
+Ours is not a mouse click and does not have to arrive in that tick, so it waits
+`grab.clickDelay` — 80ms — and lands after the suppression window has passed.
+On a gesture that already took half a second, the wait is not visible. The test
+suite loads a real GSAP Draggable and checks both halves: a press reaches the
+click handler, and a drag moves the card without clicking it.
+
 ### Why isn't my element draggable?
 
 Ask directly:
@@ -346,6 +366,7 @@ HandCursor.init({
     enabled: true,
     selector: '[data-hc-grab]',   // extra handles a library does not advertise
     tapDuration: 700,             // ms a pinch can last and still count as a tap
+    clickDelay: 80,               // ms to wait after release before the click
     cursors: ['grab', 'move', …], // computed cursors that mean "this moves"
     touchAction: true,            // treat touch-action:none as a handle
     html5: true,                  // synthesize dragstart/dragover/drop too
