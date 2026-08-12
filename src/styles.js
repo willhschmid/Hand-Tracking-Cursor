@@ -209,7 +209,7 @@ export const CSS = `
 
 /*
  * Minimized, the card becomes a tab on the edge of the screen: flush against
- * it, flat on that side and fully rounded on the side facing the page. The
+ * it, flat on that side and carrying the card's radius on the other. The
  * width and height transitions on the panel carry it both ways, so it grows
  * and shrinks rather than cutting between the two.
  *
@@ -231,12 +231,14 @@ export const CSS = `
 
 .hc-root[data-mini="true"][data-position$="-left"] .hc-panel {
   left: 0;
-  border-radius: 0 ${SIDETAB.radius}px ${SIDETAB.radius}px 0;
+  /* The card's own radius: it is the same surface, just narrower. Flat against
+     the screen edge, rounded on the side facing the page. */
+  border-radius: 0 ${RADIUS.card}px ${RADIUS.card}px 0;
 }
 
 .hc-root[data-mini="true"][data-position$="-right"] .hc-panel {
   right: 0;
-  border-radius: ${SIDETAB.radius}px 0 0 ${SIDETAB.radius}px;
+  border-radius: ${RADIUS.card}px 0 0 ${RADIUS.card}px;
 }
 
 .hc-root[data-mini="true"] .hc-stage,

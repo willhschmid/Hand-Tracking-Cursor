@@ -70,8 +70,6 @@ const TAB = {
   dot: 8,
   iconWidth: 16,
   iconHeight: 48,
-  /** Flat against the screen edge, fully rounded on the side facing the page. */
-  radius: 24,
 };
 
 export const SIDETAB = {

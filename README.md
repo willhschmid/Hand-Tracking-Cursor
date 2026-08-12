@@ -129,8 +129,8 @@ controls and framework event handlers all behave normally.
 ### Minimized
 
 Minimized, the card becomes a tab on the edge of the screen: 24 wide, flush
-against the edge, flat on that side and fully rounded on the side facing the
-page, sitting `margin` off the bottom. It holds a chevron pointing into the
+against the edge, flat on that side and carrying the card's 12px radius on the
+side facing the page, sitting `margin` off the bottom. It holds a chevron pointing into the
 page, and once the camera is on, a green dot above it — the tab grows from 64
 to 80 tall to make room. Both the expanding and the collapsing are the card's
 own width and height transitions, so it grows and shrinks rather than cutting.
@@ -682,7 +682,7 @@ Built to the *Hand Tracking Cursor Design System* (August 2026). Tokens live in
 | Red | `#FF4040` — errors |
 | Light gray | `#F6F6F6` — card surface |
 | Icon dark | `#1C1B1F` — icon strokes |
-| Radius | 8px buttons and controls, 12px cards, 24px on the tab's page-facing side |
+| Radius | 8px buttons and controls, 12px cards and the tab's page-facing side |
 | Trackpad | 260 × 200, 12px padding, 4px corner insets |
 | Minimized | A 24 × 64 tab on the screen edge, 80 tall once the camera is on |
 | Illustration | 66 × 98 on the pre-enabled card |

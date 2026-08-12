@@ -120,7 +120,7 @@ check(
 );
 check(
   'the tab is flat against the edge and rounded on the page side',
-  mini.radius === '0px 24px 24px 0px',
+  mini.radius === '0px 12px 12px 0px',
   mini.radius,
 );
 const tabIcon = await shadow('.hc-tab svg');
@@ -152,7 +152,7 @@ const mirrored = await page.evaluate(() => {
 });
 check(
   'anchored right, the tab flips to the other edge',
-  mirrored.right === 0 && mirrored.radius === '24px 0px 0px 24px',
+  mirrored.right === 0 && mirrored.radius === '12px 0px 0px 12px',
   JSON.stringify(mirrored),
 );
 check(
