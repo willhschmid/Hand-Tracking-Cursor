@@ -237,6 +237,49 @@ const illoFit = await page.evaluate(async () => {
   sampling = false;
   return { worst: Math.min(...seen), frames: seen.length };
 });
+// Two ways the collapse read as the contents growing before they shrank. The
+// padding was not in the card's transition, so it snapped from 12 to 0 on the
+// first frame while the box was still full size — 24px of room appearing at
+// once, which `space-between` spent immediately. And the illustration shrank
+// more slowly than the card around it, which the eye reads as growth however
+// the absolute numbers are going.
+const collapse = await page.evaluate(async () => {
+  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const panel = root.querySelector('.hc-panel');
+  const img = root.querySelector('.hc-illo-img');
+  window.hc.setMinimized(false);
+  await new Promise((resolve) => setTimeout(resolve, 450));
+
+  const pads = [];
+  const shares = [];
+  let sampling = true;
+  const sample = () => {
+    if (!sampling) return;
+    const box = panel.getBoundingClientRect();
+    pads.push(parseFloat(getComputedStyle(panel).paddingTop));
+    shares.push(img.getBoundingClientRect().width / box.width);
+    requestAnimationFrame(sample);
+  };
+  requestAnimationFrame(sample);
+  window.hc.setMinimized(true);
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  sampling = false;
+  // Only while the padding is actually on its way down; once it lands on 0 it
+  // stays there and says nothing more.
+  const easing = pads.filter((p) => p > 0.01 && p < 11.99);
+  return { easing: easing.length, first: pads[0], shares };
+});
+check(
+  'the padding eases out with the card rather than snapping',
+  collapse.first === 12 && collapse.easing > 3,
+  `started at ${collapse.first}, spent ${collapse.easing} frames between 0 and 12`,
+);
+check(
+  'the illustration keeps its share of the card the whole way down',
+  Math.max(...collapse.shares) - Math.min(...collapse.shares) < 0.02,
+  `share ran from ${(Math.min(...collapse.shares) * 100).toFixed(0)}% to ${(Math.max(...collapse.shares) * 100).toFixed(0)}%`,
+);
+
 check(
   'the illustration is never cropped by the shrinking card',
   illoFit.worst > 0.99 && illoFit.frames > 5,

@@ -418,6 +418,12 @@ var HandCursor = (() => {
   transition:
     width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
     height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    /* Padding animates with them. Left out, it snaps from 12 to 0 on the first
+       frame while the box is still full size \u2014 the content area gains 24px in
+       both directions at once, and space-between throws the illustration up and
+       the button down before anything has started shrinking. It reads as the
+       card's insides expanding just before they collapse. */
+    padding 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
     background-color 200ms linear,
     opacity 200ms linear;
 }
@@ -489,12 +495,19 @@ var HandCursor = (() => {
      zoomed into. A transform costs no reflow, so the illustration can recede
      without the wrapping problem that made the copy hold still in the first
      place. Timed with the card's own resize, not the shorter fade, so the two
-     move together for as long as it is visible. */
+     move together for as long as it is visible.
+
+     The scale is the card's own width ratio, on the card's own easing, so the
+     hand keeps the same share of the card the whole way down. Anything larger
+     and it shrinks more slowly than the box around it \u2014 which is growth, as far
+     as the eye is concerned, and growth is what this was reported as. */
   transform-origin: center;
   transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.hc-root[data-mini="true"] .hc-illo { transform: scale(0.3); }
+.hc-root[data-mini="true"] .hc-illo {
+  transform: scale(${(SIDETAB.width / SIZE.panelWidth).toFixed(4)});
+}
 
 .hc-root[data-state="live"] .hc-illo { display: none; }
 

@@ -146,7 +146,16 @@ fades. Holding its size like the rest would leave a 24x64 hole over a 66x98
 picture with a quarter of it showing, and a graphic clipped by a closing window
 reads as one being zoomed into rather than one leaving. A transform costs no
 reflow, so it can recede without the wrapping problem that made the copy hold
-still to begin with.
+still to begin with. The scale is the card's own width ratio on the card's own
+easing, so the hand holds exactly the same share of the card at every frame —
+shrinking more slowly than the box around it is growth, as far as the eye is
+concerned.
+
+The card's padding animates with its width and height, and has to. Left out of
+the transition it snapped from 12 to 0 on the first frame while the box was
+still full size: 24px of room appearing at once, which `space-between` spends
+immediately by throwing the illustration up and the button down. The collapse
+then reads as the contents expanding just before they shrink.
 
 The camera preview fades on opacity alone and is never taken out of the render
 tree: it is the frame source the model reads, and tracking has to keep running
