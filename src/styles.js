@@ -329,16 +329,18 @@ export const CSS = `
   display: flex;
   flex-direction: column;
   /*
-   * Anchored to the corner the tab occupies rather than centred. Centred, the
-   * chevron is pinned to the middle of whatever size the card currently is, so
-   * expanding walks it out to the centre of a 260x200 card while it fades —
-   * measured, from screen x=20 to x=138 and from 24px above the bottom to 92.
-   * Held against the edge it lives on, it stays where it was and simply fades.
+   * Held to the far side of the card from the tab, and to the bottom. Opening
+   * therefore sweeps the chevron the width of the card and closing sweeps it
+   * back, which is the movement being asked for — centred it drifted only as
+   * far as the middle and stopped, which read as neither crossing nor staying.
+   * Vertically it does not move at all.
    *
    * In the tab the content fills the box exactly, so this reads identically
-   * there: 4px either side of the chevron, 8px top and bottom.
+   * there: 4px either side of the chevron, 8px top and bottom. Which end the
+   * chevron holds is invisible at 24px wide, and only decides where it travels
+   * to once the card opens.
    */
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: flex-end;
   gap: ${SIDETAB.gap}px;
   background: transparent;
@@ -361,9 +363,9 @@ export const CSS = `
 }
 
 /* The chevron points into the page, so it turns around when the tab does — and
-   so does the corner it holds on to. */
+   so does the side it crosses towards. */
 .hc-root[data-position$="-right"] .hc-tab svg { transform: scaleX(-1); }
-.hc-root[data-position$="-right"] .hc-tab { align-items: flex-end; }
+.hc-root[data-position$="-right"] .hc-tab { align-items: flex-start; }
 .hc-root[data-position^="top"] .hc-tab { justify-content: flex-start; }
 
 .hc-tab-dot {

@@ -237,10 +237,9 @@ const illoFit = await page.evaluate(async () => {
   sampling = false;
   return { worst: Math.min(...seen), frames: seen.length };
 });
-// Centred, the chevron is pinned to the middle of whatever size the card is —
-// so expanding walks it out to the centre of a 260x200 card while it fades,
-// measured from screen x=20 to x=138 and from 24px above the bottom to 92. Held
-// to the corner the tab occupies, it stays put and simply fades.
+// The chevron holds the far side of the card from the tab, so opening sweeps it
+// the width of the card and closing sweeps it back. Centred it drifted only as
+// far as the middle and stopped, which read as neither crossing nor staying.
 const chevronTravel = await page.evaluate(async () => {
   const root = document.querySelector('[data-hand-cursor]').shadowRoot;
   const svg = root.querySelector('.hc-tab svg');
@@ -264,10 +263,9 @@ const chevronTravel = await page.evaluate(async () => {
   return { x: Math.max(...xs) - Math.min(...xs), y: Math.max(...ys) - Math.min(...ys) };
 });
 check(
-  'the chevron holds its corner while the card opens around it',
-  // Sideways it shifts only by the margin the card sits off the screen edge,
-  // which the tab is flush against; vertically it should not move at all.
-  chevronTravel.x <= 16 && chevronTravel.y < 1,
+  'the chevron crosses the card as it opens, without rising',
+  // Most of the card's width, and not a pixel vertically.
+  chevronTravel.x > 200 && chevronTravel.y < 1,
   `moved ${chevronTravel.x.toFixed(0)}px across and ${chevronTravel.y.toFixed(0)}px up`,
 );
 

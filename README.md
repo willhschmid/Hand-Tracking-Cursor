@@ -166,15 +166,17 @@ tab itself is the button, and the only thing it can mean is "open me". Turning
 the camera off moves back to the expanded card, where there is room to say so —
 or <kbd>Esc</kbd>, which works from either.
 
-The chevron holds the corner the tab occupies rather than centring in the card.
-Centred, it is pinned to the middle of whatever size the card currently is, so
-opening walks it out to the middle of a 260x200 card while it fades — measured,
-from screen x=20 to x=138, and from 24px above the bottom to 92. Anchored, it
-stays where it was and simply fades.
+The chevron holds the far side of the card from the tab, and its bottom, so
+opening sweeps it the width of the card and closing sweeps it back — measured,
+screen x=4 to x=256, at a fixed 24px above the bottom the whole way. Centred it
+drifted as far as the middle and stopped, which read as neither crossing nor
+staying. Which end it holds is invisible in the tab itself, where the content
+fills the 24px box exactly; it only decides where the chevron travels to once
+the card opens.
 
 It follows `position`, so anchoring the trackpad right puts the tab on the right
-edge with its rounding, its chevron and the corner that chevron holds all
-turned around.
+edge with its rounding, its chevron and the side it crosses towards all turned
+around.
 
 ### Hover
 
