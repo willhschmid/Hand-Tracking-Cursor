@@ -237,6 +237,40 @@ const illoFit = await page.evaluate(async () => {
   sampling = false;
   return { worst: Math.min(...seen), frames: seen.length };
 });
+// Centred, the chevron is pinned to the middle of whatever size the card is —
+// so expanding walks it out to the centre of a 260x200 card while it fades,
+// measured from screen x=20 to x=138 and from 24px above the bottom to 92. Held
+// to the corner the tab occupies, it stays put and simply fades.
+const chevronTravel = await page.evaluate(async () => {
+  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const svg = root.querySelector('.hc-tab svg');
+  window.hc.setMinimized(true);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  const seen = [];
+  let sampling = true;
+  const sample = () => {
+    if (!sampling) return;
+    const box = svg.getBoundingClientRect();
+    seen.push([box.left, innerHeight - box.bottom]);
+    requestAnimationFrame(sample);
+  };
+  requestAnimationFrame(sample);
+  window.hc.setMinimized(false);
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  sampling = false;
+  const xs = seen.map((s) => s[0]);
+  const ys = seen.map((s) => s[1]);
+  return { x: Math.max(...xs) - Math.min(...xs), y: Math.max(...ys) - Math.min(...ys) };
+});
+check(
+  'the chevron holds its corner while the card opens around it',
+  // Sideways it shifts only by the margin the card sits off the screen edge,
+  // which the tab is flush against; vertically it should not move at all.
+  chevronTravel.x <= 16 && chevronTravel.y < 1,
+  `moved ${chevronTravel.x.toFixed(0)}px across and ${chevronTravel.y.toFixed(0)}px up`,
+);
+
 // Two ways the collapse read as the contents growing before they shrank. The
 // padding was not in the card's transition, so it snapped from 12 to 0 on the
 // first frame while the box was still full size — 24px of room appearing at

@@ -49,6 +49,11 @@ export const CSS = `
        the button down before anything has started shrinking. It reads as the
        card's insides expanding just before they collapse. */
     padding 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    /* And its offsets, for the same reason: the tab sits flush to the screen
+       edge while the card sits its margin off it, so leaving these out jumps the
+       whole thing 16px sideways on the first frame of every resize. */
+    left 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    right 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
     background-color 200ms linear,
     opacity 200ms linear;
 }
@@ -314,15 +319,27 @@ export const CSS = `
   appearance: none;
   border: 0;
   margin: 0;
-  padding: ${SIDETAB.pad}px 0;
+  /* Side padding is what centres the chevron in the tab — the same 4px the
+     spec asks for — so anchoring to the edge below costs the tab nothing. */
+  padding: ${SIDETAB.pad}px ${(SIDETAB.width - SIDETAB.iconWidth) / 2}px;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transition: opacity 160ms linear, visibility 0s linear 160ms;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  /*
+   * Anchored to the corner the tab occupies rather than centred. Centred, the
+   * chevron is pinned to the middle of whatever size the card currently is, so
+   * expanding walks it out to the centre of a 260x200 card while it fades —
+   * measured, from screen x=20 to x=138 and from 24px above the bottom to 92.
+   * Held against the edge it lives on, it stays where it was and simply fades.
+   *
+   * In the tab the content fills the box exactly, so this reads identically
+   * there: 4px either side of the chevron, 8px top and bottom.
+   */
+  align-items: flex-start;
+  justify-content: flex-end;
   gap: ${SIDETAB.gap}px;
   background: transparent;
   color: ${COLOR.iconDark};
@@ -343,12 +360,18 @@ export const CSS = `
   flex: none;
 }
 
-/* The chevron points into the page, so it turns around when the tab does. */
+/* The chevron points into the page, so it turns around when the tab does — and
+   so does the corner it holds on to. */
 .hc-root[data-position$="-right"] .hc-tab svg { transform: scaleX(-1); }
+.hc-root[data-position$="-right"] .hc-tab { align-items: flex-end; }
+.hc-root[data-position^="top"] .hc-tab { justify-content: flex-start; }
 
 .hc-tab-dot {
   display: none;
   flex: none;
+  /* Centred across the tab, unlike the chevron, which the spec puts 8px from
+     either side rather than hard against one. */
+  align-self: center;
   width: ${SIDETAB.dot}px;
   height: ${SIDETAB.dot}px;
   border-radius: 50%;
