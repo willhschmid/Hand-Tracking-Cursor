@@ -500,7 +500,12 @@ var HandCursor = (() => {
 .hc-copy {
   flex: none;
   margin: 0;
-  max-width: 100%;
+  /* Fixed, not a percentage. The card's width animates between 260 and 24,
+     and a percentage width follows it down \u2014 so the copy re-wraps line by line
+     on the way out and the button squeezes beside it. Laid out once at the
+     expanded size, the content simply overflows the shrinking box, which the
+     card already clips, and fades while it does. */
+  width: ${SIZE.panelWidth - SIZE.pad * 2}px;
   text-align: center;
   font-size: ${TYPE.body.size}px;
   font-weight: ${TYPE.body.weight};
@@ -511,14 +516,14 @@ var HandCursor = (() => {
 
 .hc-root[data-state="error"] .hc-copy { color: ${COLOR.red}; }
 
-.hc-root[data-state="live"] .hc-copy,
-.hc-root[data-mini="true"] .hc-copy { display: none; }
+.hc-root[data-state="live"] .hc-copy { display: none; }
 
 /* ------------------------------------------------------------------ cta -- */
 
 .hc-cta {
   flex: none;
   appearance: none;
+  white-space: nowrap;
   border: 0;
   margin: 0;
   display: inline-flex;
@@ -546,8 +551,7 @@ var HandCursor = (() => {
 
 .hc-cta svg { width: ${SIZE.iconSize}px; height: ${SIZE.iconSize}px; flex: none; }
 
-.hc-root[data-state="live"] .hc-cta,
-.hc-root[data-mini="true"] .hc-cta { display: none; }
+.hc-root[data-state="live"] .hc-cta { display: none; }
 
 /* -------------------------------------------------------- corner button -- */
 
@@ -616,9 +620,43 @@ var HandCursor = (() => {
   border-radius: ${RADIUS.card}px 0 0 ${RADIUS.card}px;
 }
 
-.hc-root[data-mini="true"] .hc-stage,
-.hc-root[data-mini="true"] .hc-corner,
-.hc-root[data-mini="true"][data-state="live"] .hc-corner--tl { display: none; }
+/*
+ * Crossing between the two sizes is a fade, not a switch. Display cannot be
+ * animated, so anything toggled with it pops in or out halfway through the
+ * card's resize; opacity carries it across instead, and visibility follows one
+ * beat behind so nothing invisible stays clickable or focusable.
+ */
+.hc-copy,
+.hc-cta,
+.hc-corner,
+.hc-tab {
+  transition: opacity 160ms linear, visibility 0s;
+}
+
+.hc-root[data-mini="true"] .hc-copy,
+.hc-root[data-mini="true"] .hc-cta,
+.hc-root[data-mini="true"] .hc-corner {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 160ms linear, visibility 0s linear 160ms;
+}
+
+/*
+ * The stage fades on opacity alone \u2014 never display or visibility. The
+ * camera feed lives in here, and it is the frame source the model reads every
+ * tick. Taking it out of the render tree to hide it would be hiding the thing
+ * that makes the tab worth having: tracking has to keep running while the card
+ * is a 24px tab, which is most of the time it is being used.
+ */
+.hc-stage {
+  transition: opacity 160ms linear;
+}
+
+.hc-root[data-mini="true"] .hc-stage {
+  opacity: 0;
+  pointer-events: none;
+}
 
 .hc-tab {
   position: absolute;
@@ -627,7 +665,11 @@ var HandCursor = (() => {
   border: 0;
   margin: 0;
   padding: ${SIDETAB.pad}px 0;
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 160ms linear, visibility 0s linear 160ms;
+  display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -637,7 +679,12 @@ var HandCursor = (() => {
   cursor: pointer;
 }
 
-.hc-root[data-mini="true"] .hc-tab { display: flex; }
+.hc-root[data-mini="true"] .hc-tab {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 160ms linear, visibility 0s;
+}
 
 .hc-tab svg {
   display: block;
@@ -758,8 +805,11 @@ var HandCursor = (() => {
 
 @media (prefers-reduced-motion: reduce) {
   .hc-panel,
+  .hc-copy,
   .hc-cta,
-  .hc-corner { transition-duration: 1ms; }
+  .hc-stage,
+  .hc-corner,
+  .hc-tab { transition-duration: 1ms; }
   .hc-spinner { animation-duration: 2s; }
 }
 `;

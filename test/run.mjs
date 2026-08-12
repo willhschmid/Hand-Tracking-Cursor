@@ -177,6 +177,46 @@ check(
   JSON.stringify(reopened),
 );
 
+// The complaint this fixes: the card's width animates from 260 to 24, and any
+// content sized against it re-lays out on the way — the copy re-wrapping line
+// by line, the button squeezing beside it. Laid out once at the expanded size
+// and faded, the measurements do not move at all.
+const steady = await page.evaluate(async () => {
+  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const read = () => ({
+    copy: root.querySelector('.hc-copy').getBoundingClientRect().width,
+    cta: root.querySelector('.hc-cta').getBoundingClientRect().width,
+    illo: root.querySelector('.hc-stage').getBoundingClientRect().width,
+    // Height, not a line count: `getClientRects` on a block returns its one box
+    // whatever the text inside is doing. Re-wrapping shows up as the paragraph
+    // getting taller, which is the thing being watched for.
+    copyHeight: root.querySelector('.hc-copy').getBoundingClientRect().height,
+  });
+  window.hc.setMinimized(false);
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  const open = read();
+  window.hc.setMinimized(true);
+  // Sampled mid-resize, where the squeezing was visible, and again at rest.
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const during = read();
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  const shut = read();
+  return { open, during, shut };
+});
+check(
+  'the copy holds its width and its wrapping while the card shrinks',
+  steady.open.copy === 236 &&
+    steady.during.copy === 236 &&
+    steady.shut.copy === 236 &&
+    steady.during.copyHeight === steady.open.copyHeight,
+  JSON.stringify(steady),
+);
+check(
+  'the button and the illustration do not squeeze either',
+  steady.during.cta === steady.open.cta && steady.during.illo === steady.open.illo,
+  JSON.stringify(steady),
+);
+
 const illustration = await page.evaluate(() => {
   const img = document
     .querySelector('[data-hand-cursor]')
@@ -492,9 +532,15 @@ const miniLive = await page.evaluate(async () => {
         toChevron: icon.top - dot.bottom,
       },
       // Nothing else fits in a 24px tab, and nothing else has anything to say.
-      preview: getComputedStyle(sr.querySelector('.hc-stage')).display,
-      cameraOff: getComputedStyle(sr.querySelector('.hc-corner--tl')).display,
-      expand: getComputedStyle(sr.querySelector('.hc-corner--tr')).display,
+      // Read as opacity rather than display: these fade out with the resize, so
+      // "gone" means invisible and untouchable, not removed.
+      hidden: ['.hc-stage', '.hc-corner--tl', '.hc-corner--tr'].map((sel) => {
+        const st = getComputedStyle(sr.querySelector(sel));
+        return { opacity: st.opacity, events: st.pointerEvents };
+      }),
+      // The feed has to stay in the render tree even here — it is what the
+      // model reads every tick, and tracking is the whole point of the tab.
+      previewRendered: sr.querySelector('.hc-video').getClientRects().length > 0,
     };
   };
   const live = read();
@@ -532,9 +578,15 @@ check(
 );
 check(
   'the tab carries nothing else — no preview and no controls',
-  ['preview', 'cameraOff', 'expand'].every((k) => miniLive.live[k] === 'none') &&
-    ['preview', 'cameraOff', 'expand'].every((k) => miniLive.idle[k] === 'none'),
-  JSON.stringify({ live: miniLive.live, idle: miniLive.idle }),
+  [miniLive.live, miniLive.idle].every((s) =>
+    s.hidden.every((h) => h.opacity === '0' && h.events === 'none'),
+  ),
+  JSON.stringify({ live: miniLive.live.hidden, idle: miniLive.idle.hidden }),
+);
+check(
+  'the camera feed keeps rendering while minimized, so tracking survives',
+  miniLive.live.previewRendered,
+  'the video element left the render tree',
 );
 check('the preview is desaturated', video.filter.includes('grayscale'), video.filter);
 

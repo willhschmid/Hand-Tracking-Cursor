@@ -135,6 +135,14 @@ page, and once the camera is on, a green dot above it — the tab grows from 64
 to 80 tall to make room. Both the expanding and the collapsing are the card's
 own width and height transitions, so it grows and shrinks rather than cutting.
 
+What the card holds is laid out once at the expanded size and crossfades, so
+none of it re-flows on the way. Sized against the box instead, the copy re-wraps
+line by line as the width animates down and the button squeezes beside it —
+measured, the paragraph went from 236px wide and two lines to 45px wide and
+twelve, mid-transition. The camera preview fades on opacity alone and is never
+taken out of the render tree: it is the frame source the model reads, and
+tracking has to keep running while the card is a tab.
+
 Nothing else survives at 24px wide. There is no preview and no controls: the
 tab itself is the button, and the only thing it can mean is "open me". Turning
 the camera off moves back to the expanded card, where there is room to say so —
