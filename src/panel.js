@@ -5,7 +5,7 @@ import { HAND_GRAPHIC } from './hand-graphic.js';
 
 /**
  * The trackpad card: the pre-enabled prompt, the live camera preview and the
- * 106x106 minimized state, plus the skeleton overlay drawn on top of the feed.
+ * minimized side tab, plus the skeleton overlay drawn on top of the feed.
  */
 export class Panel {
   constructor(options, handlers) {
@@ -31,7 +31,10 @@ export class Panel {
         <button class="hc-cta" type="button"></button>
         <button class="hc-corner hc-corner--tl" type="button"></button>
         <button class="hc-corner hc-corner--tr" type="button"></button>
-        <button class="hc-mini-cta" type="button"></button>
+        <button class="hc-tab" type="button">
+          <span class="hc-tab-dot" aria-hidden="true"></span>
+          ${ICONS.chevron}
+        </button>
       </div>
       <p class="hc-sr" role="status" aria-live="polite"></p>
     `;
@@ -44,7 +47,7 @@ export class Panel {
     this.cta = q('.hc-cta');
     this.cornerLeft = q('.hc-corner--tl');
     this.cornerRight = q('.hc-corner--tr');
-    this.miniCta = q('.hc-mini-cta');
+    this.tab = q('.hc-tab');
     this.status = q('.hc-sr');
 
     this.ctx = this.canvas.getContext('2d');
@@ -55,7 +58,9 @@ export class Panel {
     this.cornerLeft.setAttribute('aria-label', options.strings.disable);
 
     this.cta.addEventListener('click', (event) => handlers.onToggleCamera(event));
-    this.miniCta.addEventListener('click', (event) => handlers.onToggleCamera(event));
+    // The whole tab is the affordance — at 24px wide there is no room for a
+    // control inside one, and nothing else for it to mean.
+    this.tab.addEventListener('click', () => handlers.onToggleSize());
     this.cornerLeft.addEventListener('click', () => handlers.onStop());
     this.cornerRight.addEventListener('click', () => handlers.onToggleSize());
 
@@ -93,11 +98,8 @@ export class Panel {
       `<span>${label}</span>`;
     this.cta.disabled = loading;
 
-    this.miniCta.innerHTML = live ? ICONS.videocamOff : ICONS.videocam;
-    const miniLabel = live ? s.disable : s.enable;
-    this.miniCta.title = miniLabel;
-    this.miniCta.setAttribute('aria-label', miniLabel);
-    this.miniCta.disabled = loading;
+    this.tab.title = s.expand;
+    this.tab.setAttribute('aria-label', s.expand);
 
     const sizeLabel = this.mini ? s.expand : s.minimize;
     this.cornerRight.innerHTML = this.mini ? ICONS.expand : ICONS.collapse;

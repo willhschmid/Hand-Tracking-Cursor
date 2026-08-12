@@ -42,7 +42,6 @@ export const TYPE = {
 export const SIZE = {
   panelWidth: 260,
   panelHeight: 200,
-  miniSize: 106,
   pad: 12,
   gap: 12,
   cornerInset: 4,
@@ -51,10 +50,34 @@ export const SIZE = {
   ctaHeight: 32,
   ctaPadX: 12,
   ctaGap: 8,
-  miniCta: 32,
   /** The hand illustration on the pre-enabled card. */
   illoWidth: 66,
   illoHeight: 98,
+};
+
+/**
+ * The minimized state: a tab stuck to the edge of the screen.
+ *
+ * The two heights are derived rather than written down, because the spec gives
+ * them as a stack — 8, then the icon, then 8, with the dot and another gap
+ * added once the camera is on — and a hardcoded 64 and 80 would be free to
+ * drift away from the parts that make them up.
+ */
+const TAB = {
+  width: 24,
+  pad: 8,
+  gap: 8,
+  dot: 8,
+  iconWidth: 16,
+  iconHeight: 48,
+  /** Flat against the screen edge, fully rounded on the side facing the page. */
+  radius: 24,
+};
+
+export const SIDETAB = {
+  ...TAB,
+  height: TAB.pad * 2 + TAB.iconHeight,
+  liveHeight: TAB.pad * 3 + TAB.dot + TAB.iconHeight,
 };
 
 export const FONT_URL =

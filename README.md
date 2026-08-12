@@ -126,6 +126,23 @@ Taps dispatch a full `pointerdown` → `mousedown` → `pointerup` → `mouseup`
 `click` sequence with real coordinates, and move focus, so buttons, links, form
 controls and framework event handlers all behave normally.
 
+### Minimized
+
+Minimized, the card becomes a tab on the edge of the screen: 24 wide, flush
+against the edge, flat on that side and fully rounded on the side facing the
+page, sitting `margin` off the bottom. It holds a chevron pointing into the
+page, and once the camera is on, a green dot above it — the tab grows from 64
+to 80 tall to make room. Both the expanding and the collapsing are the card's
+own width and height transitions, so it grows and shrinks rather than cutting.
+
+Nothing else survives at 24px wide. There is no preview and no controls: the
+tab itself is the button, and the only thing it can mean is "open me". Turning
+the camera off moves back to the expanded card, where there is room to say so —
+or <kbd>Esc</kbd>, which works from either.
+
+It follows `position`, so anchoring the trackpad right puts the tab on the right
+edge with its rounding and its chevron turned around.
+
 ### Hover
 
 CSS `:hover` is owned by the browser and only ever follows the real pointer, so
@@ -306,7 +323,7 @@ HandCursor.init({
   position: 'bottom-left',   // bottom-left | bottom-right | top-left | top-right
   margin: 16,                // distance from the viewport edges, px
   autoStart: false,          // request the camera immediately
-  minimized: false,          // start as the 106x106 card
+  minimized: false,          // start as the edge tab
   grayscale: true,           // desaturate the preview
   font: true,                // load Inter if the page does not already have it
   hideNativeCursor: false,   // hide the OS pointer while tracking
@@ -405,7 +422,7 @@ const cursor = HandCursor.init(options);
 
 cursor.start();            // request the camera and begin tracking
 cursor.stop();             // release the camera, return to the idle card
-cursor.setMinimized(true); // collapse to the 106x106 card
+cursor.setMinimized(true); // collapse to the edge tab
 cursor.destroy();          // remove everything from the page
 
 HandCursor.instance();     // the live instance, or null
@@ -665,9 +682,9 @@ Built to the *Hand Tracking Cursor Design System* (August 2026). Tokens live in
 | Red | `#FF4040` — errors |
 | Light gray | `#F6F6F6` — card surface |
 | Icon dark | `#1C1B1F` — icon strokes |
-| Radius | 8px buttons and controls, 12px cards |
+| Radius | 8px buttons and controls, 12px cards, 24px on the tab's page-facing side |
 | Trackpad | 260 × 200, 12px padding, 4px corner insets |
-| Minimized | 106 × 106; the green camera button appears only before the camera is on |
+| Minimized | A 24 × 64 tab on the screen edge, 80 tall once the camera is on |
 | Illustration | 66 × 98 on the pre-enabled card |
 | Icons | 24 × 24 Material Symbols in `#1C1B1F`, in 32 × 32 buttons |
 | Live preview | Camera at 15% opacity over the `#F6F6F6` card, so icons stay legible |

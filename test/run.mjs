@@ -108,17 +108,75 @@ check('CTA reads "Enable Camera"', cta.text === 'Enable Camera', cta.text);
 await page.evaluate(() => window.hc.setMinimized(true));
 await page.waitForTimeout(400);
 const mini = await shadow('.hc-panel');
-const miniCta = await shadow('.hc-mini-cta');
 check(
-  'minimized trackpad is 106x106',
-  mini.width === 106 && mini.height === 106,
+  'minimized, the trackpad is a 24x64 tab',
+  mini.width === 24 && mini.height === 64,
   `${mini.width}x${mini.height}`,
 );
 check(
-  'minimized trackpad keeps the 16px margin',
-  mini.left === 16 && 700 - mini.bottom === 16,
+  'the tab sits flush to the screen edge, 16px off the bottom',
+  mini.left === 0 && 700 - mini.bottom === 16,
   `left ${mini.left}, bottom ${700 - mini.bottom}`,
 );
+check(
+  'the tab is flat against the edge and rounded on the page side',
+  mini.radius === '0px 24px 24px 0px',
+  mini.radius,
+);
+const tabIcon = await shadow('.hc-tab svg');
+check(
+  'the chevron is 16x48, inset 4px either side and 8px top and bottom',
+  tabIcon.width === 16 &&
+    tabIcon.height === 48 &&
+    tabIcon.left - mini.left === 4 &&
+    mini.right - tabIcon.right === 4 &&
+    tabIcon.top - mini.top === 8 &&
+    mini.bottom - tabIcon.bottom === 8,
+  JSON.stringify(tabIcon),
+);
+// Anchored to the other edge, the tab has to turn around with it — otherwise
+// it rounds off into the screen and points out of it.
+const mirrored = await page.evaluate(() => {
+  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const host = root.querySelector('.hc-root');
+  host.dataset.position = 'bottom-right';
+  const panel = root.querySelector('.hc-panel');
+  const box = panel.getBoundingClientRect();
+  const out = {
+    right: innerWidth - box.right,
+    radius: getComputedStyle(panel).borderRadius,
+    flip: getComputedStyle(root.querySelector('.hc-tab svg')).transform,
+  };
+  host.dataset.position = 'bottom-left';
+  return out;
+});
+check(
+  'anchored right, the tab flips to the other edge',
+  mirrored.right === 0 && mirrored.radius === '24px 0px 0px 24px',
+  JSON.stringify(mirrored),
+);
+check(
+  'anchored right, the chevron points the other way',
+  mirrored.flip === 'matrix(-1, 0, 0, 1, 0, 0)',
+  mirrored.flip,
+);
+
+// The tab is the whole affordance, so tapping anywhere on it opens the card.
+const reopened = await page.evaluate(async () => {
+  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
+  root.querySelector('.hc-tab').click();
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  const box = root.querySelector('.hc-panel').getBoundingClientRect();
+  window.hc.setMinimized(true);
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  return { width: box.width, height: box.height };
+});
+check(
+  'tapping the tab opens the card back up',
+  reopened.width === 260 && reopened.height === 200,
+  JSON.stringify(reopened),
+);
+
 const illustration = await page.evaluate(() => {
   const img = document
     .querySelector('[data-hand-cursor]')
@@ -135,15 +193,6 @@ check(
   JSON.stringify(illustration),
 );
 
-check(
-  'minimized camera button is 32x32, 8px radius, inset 4px',
-  miniCta.width === 32 &&
-    miniCta.height === 32 &&
-    miniCta.radius === '8px' &&
-    miniCta.left - mini.left === 4 &&
-    mini.bottom - miniCta.bottom === 4,
-  JSON.stringify(miniCta),
-);
 await page.evaluate(() => window.hc.setMinimized(false));
 await page.waitForTimeout(400);
 
@@ -426,30 +475,66 @@ check(
 
 const miniLive = await page.evaluate(async () => {
   window.hc.setMinimized(true);
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  await new Promise((resolve) => setTimeout(resolve, 500));
   const sr = document.querySelector('[data-hand-cursor]').shadowRoot;
-  const read = () => ({
-    greenButton: getComputedStyle(sr.querySelector('.hc-mini-cta')).display,
-    cameraOff: getComputedStyle(sr.querySelector('.hc-corner--tl')).display,
-    expand: getComputedStyle(sr.querySelector('.hc-corner--tr')).display,
-  });
+  const read = () => {
+    const panel = sr.querySelector('.hc-panel').getBoundingClientRect();
+    const dotStyle = getComputedStyle(sr.querySelector('.hc-tab-dot'));
+    const dot = sr.querySelector('.hc-tab-dot').getBoundingClientRect();
+    const icon = sr.querySelector('.hc-tab svg').getBoundingClientRect();
+    return {
+      height: panel.height,
+      dot: dotStyle.display === 'none' ? null : {
+        size: [dot.width, dot.height],
+        colour: dotStyle.backgroundColor,
+        fromTop: dot.top - panel.top,
+        sides: [dot.left - panel.left, panel.right - dot.right],
+        toChevron: icon.top - dot.bottom,
+      },
+      // Nothing else fits in a 24px tab, and nothing else has anything to say.
+      preview: getComputedStyle(sr.querySelector('.hc-stage')).display,
+      cameraOff: getComputedStyle(sr.querySelector('.hc-corner--tl')).display,
+      expand: getComputedStyle(sr.querySelector('.hc-corner--tr')).display,
+    };
+  };
   const live = read();
   window.hc.panel.setState('idle');
+  await new Promise((resolve) => setTimeout(resolve, 500));
   const idle = read();
   window.hc.panel.setState('live');
+  // Back out of the tab: the preview is hidden while minimized, so anything
+  // after this that reads the canvas needs the card open again.
+  window.hc.setMinimized(false);
+  await new Promise((resolve) => setTimeout(resolve, 500));
   return { live, idle };
 });
 check(
-  'minimized while live shows only the camera-off icon, no green button',
-  miniLive.live.greenButton === 'none' &&
-    miniLive.live.cameraOff !== 'none' &&
-    miniLive.live.expand !== 'none',
-  JSON.stringify(miniLive.live),
+  'the tab grows to 80px when the camera is on',
+  miniLive.live.height === 80 && miniLive.idle.height === 64,
+  `live ${miniLive.live.height}, idle ${miniLive.idle.height}`,
 );
 check(
-  'minimized before enabling still shows the green button',
-  miniLive.idle.greenButton !== 'none' && miniLive.idle.cameraOff === 'none',
-  JSON.stringify(miniLive.idle),
+  'the green dot appears only once the camera is enabled',
+  miniLive.live.dot !== null && miniLive.idle.dot === null,
+  JSON.stringify({ live: miniLive.live.dot, idle: miniLive.idle.dot }),
+);
+check(
+  'the dot is an 8px green circle, 8px from the top and centred',
+  miniLive.live.dot &&
+    miniLive.live.dot.size[0] === 8 &&
+    miniLive.live.dot.size[1] === 8 &&
+    miniLive.live.dot.colour === 'rgb(0, 202, 72)' &&
+    miniLive.live.dot.fromTop === 8 &&
+    miniLive.live.dot.sides[0] === 8 &&
+    miniLive.live.dot.sides[1] === 8 &&
+    miniLive.live.dot.toChevron === 8,
+  JSON.stringify(miniLive.live.dot),
+);
+check(
+  'the tab carries nothing else — no preview and no controls',
+  ['preview', 'cameraOff', 'expand'].every((k) => miniLive.live[k] === 'none') &&
+    ['preview', 'cameraOff', 'expand'].every((k) => miniLive.idle[k] === 'none'),
+  JSON.stringify({ live: miniLive.live, idle: miniLive.idle }),
 );
 check('the preview is desaturated', video.filter.includes('grayscale'), video.filter);
 
@@ -1048,10 +1133,11 @@ for (const lenis of [false, true]) {
     window.gsapLog = [];
     for (let i = 0; i < 30; i++) window.feedNow(...window.toCamera(from.x, from.y), false);
     window.feedNow(...window.toCamera(from.x, from.y), true);
-    // 30px of drift, which is nothing for a hand and fifteen times GSAP's bar.
-    for (let i = 1; i <= 4; i++) {
-      window.feedNow(...window.toCamera(from.x + i * 7.5, from.y), true);
-      await new Promise((r) => setTimeout(r, 40));
+    // 30px of drift, which is nothing for a hand and fifteen times GSAP's bar,
+    // over a span that stays well inside `grab.tapDuration` even under load.
+    for (let i = 1; i <= 3; i++) {
+      window.feedNow(...window.toCamera(from.x + i * 10, from.y), true);
+      await new Promise((r) => setTimeout(r, 30));
     }
     window.feedNow(...window.toCamera(from.x + 30, from.y), false);
     await new Promise((r) => setTimeout(r, 300));

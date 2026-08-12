@@ -1,4 +1,4 @@
-import { COLOR, RADIUS, SIZE, TYPE } from './tokens.js';
+import { COLOR, RADIUS, SIDETAB, SIZE, TYPE } from './tokens.js';
 
 /**
  * All styles live inside the shadow root, so nothing here can be reached by —
@@ -52,11 +52,6 @@ export const CSS = `
 .hc-root[data-position^="bottom"] .hc-panel { bottom: var(--hc-margin); }
 .hc-root[data-position^="top"]    .hc-panel { top: var(--hc-margin); }
 
-.hc-root[data-mini="true"] .hc-panel {
-  width: ${SIZE.miniSize}px;
-  height: ${SIZE.miniSize}px;
-  padding: 0;
-}
 
 .hc-root[data-state="live"] .hc-panel {
   padding: 0;
@@ -78,8 +73,7 @@ export const CSS = `
   justify-content: center;
 }
 
-.hc-root[data-state="live"] .hc-stage,
-.hc-root[data-mini="true"] .hc-stage {
+.hc-root[data-state="live"] .hc-stage {
   position: absolute;
   inset: 0;
   width: auto;
@@ -116,7 +110,6 @@ export const CSS = `
 }
 
 .hc-root[data-state="live"] .hc-illo { display: none; }
-.hc-root[data-mini="true"] .hc-illo { padding: 10px; }
 
 .hc-illo-img {
   display: block;
@@ -183,8 +176,7 @@ export const CSS = `
 
 /* -------------------------------------------------------- corner button -- */
 
-.hc-corner,
-.hc-mini-cta {
+.hc-corner {
   position: absolute;
   appearance: none;
   border: 0;
@@ -213,32 +205,83 @@ export const CSS = `
 
 .hc-root[data-state="live"] .hc-corner--tl { display: inline-flex; }
 
-/* ------------------------------------------------------- minimized cta -- */
+/* ------------------------------------------------------------- side tab -- */
 
-.hc-mini-cta {
-  left: ${SIZE.cornerInset}px;
-  bottom: ${SIZE.cornerInset}px;
-  width: ${SIZE.miniCta}px;
-  height: ${SIZE.miniCta}px;
-  border-radius: ${RADIUS.button}px;
-  background: ${COLOR.green};
-  color: ${COLOR.white};
-  transition: background-color 150ms linear, transform 120ms ease-out;
+/*
+ * Minimized, the card becomes a tab on the edge of the screen: flush against
+ * it, flat on that side and fully rounded on the side facing the page. The
+ * width and height transitions on the panel carry it both ways, so it grows
+ * and shrinks rather than cutting between the two.
+ *
+ * Nothing else survives at 24px wide — no preview, no controls. The tab itself
+ * is the button, and the only thing it can mean is "open me". Turning the
+ * camera off moves back to the expanded card, where there is room to say so.
+ */
+
+.hc-root[data-mini="true"] .hc-panel {
+  width: ${SIDETAB.width}px;
+  height: ${SIDETAB.height}px;
+  padding: 0;
 }
 
-.hc-mini-cta svg { width: ${SIZE.iconSize}px; height: ${SIZE.iconSize}px; }
-.hc-mini-cta:hover,
-.hc-mini-cta.hc-hover { background: ${COLOR.darkGreen}; }
-.hc-mini-cta:active { transform: scale(0.94); }
+/* The green dot is an extra row, so the tab grows to hold it. */
+.hc-root[data-mini="true"][data-state="live"] .hc-panel {
+  height: ${SIDETAB.liveHeight}px;
+}
 
-.hc-root[data-mini="true"] .hc-mini-cta { display: inline-flex; }
+.hc-root[data-mini="true"][data-position$="-left"] .hc-panel {
+  left: 0;
+  border-radius: 0 ${SIDETAB.radius}px ${SIDETAB.radius}px 0;
+}
 
-/* Once the camera is on, the only control in the minimized card is the
-   camera-off icon in the top left. The green button is the pre-enabled
-   affordance and has nothing left to offer here. */
-.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta { display: none; }
+.hc-root[data-mini="true"][data-position$="-right"] .hc-panel {
+  right: 0;
+  border-radius: ${SIDETAB.radius}px 0 0 ${SIDETAB.radius}px;
+}
 
-.hc-root[data-mini="true"][data-state="loading"] .hc-mini-cta { opacity: 0.7; }
+.hc-root[data-mini="true"] .hc-stage,
+.hc-root[data-mini="true"] .hc-corner,
+.hc-root[data-mini="true"][data-state="live"] .hc-corner--tl { display: none; }
+
+.hc-tab {
+  position: absolute;
+  inset: 0;
+  appearance: none;
+  border: 0;
+  margin: 0;
+  padding: ${SIDETAB.pad}px 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: ${SIDETAB.gap}px;
+  background: transparent;
+  color: ${COLOR.iconDark};
+  cursor: pointer;
+}
+
+.hc-root[data-mini="true"] .hc-tab { display: flex; }
+
+.hc-tab svg {
+  display: block;
+  width: ${SIDETAB.iconWidth}px;
+  height: ${SIDETAB.iconHeight}px;
+  flex: none;
+}
+
+/* The chevron points into the page, so it turns around when the tab does. */
+.hc-root[data-position$="-right"] .hc-tab svg { transform: scaleX(-1); }
+
+.hc-tab-dot {
+  display: none;
+  flex: none;
+  width: ${SIDETAB.dot}px;
+  height: ${SIDETAB.dot}px;
+  border-radius: 50%;
+  background: ${COLOR.green};
+}
+
+.hc-root[data-state="live"] .hc-tab-dot { display: block; }
 
 /* -------------------------------------------------------------- spinner -- */
 
@@ -339,7 +382,6 @@ export const CSS = `
 @media (prefers-reduced-motion: reduce) {
   .hc-panel,
   .hc-cta,
-  .hc-mini-cta,
   .hc-corner { transition-duration: 1ms; }
   .hc-spinner { animation-duration: 2s; }
 }

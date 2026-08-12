@@ -5,6 +5,22 @@ const pkg = JSON.parse(await readFile(new URL('./package.json', import.meta.url)
 
 const banner = `/*! hand-tracking-cursor v${pkg.version} | MIT | ${pkg.repository.url.replace(/^git\+|\.git$/g, '')} */`;
 
+/*
+ * The whole stylesheet is one template literal, so a stray backtick inside it —
+ * a CSS comment naming a selector, most easily — closes the string early and
+ * ships a sheet that stops at that line. It has happened twice. The build
+ * refuses now rather than leaving it to be noticed on a device.
+ */
+const styles = await readFile(new URL('./src/styles.js', import.meta.url), 'utf8');
+const opened = styles.indexOf('`');
+const closed = styles.lastIndexOf('`');
+if (styles.slice(opened + 1, closed).includes('`')) {
+  const line = styles.slice(0, opened + 1 + styles.slice(opened + 1, closed).indexOf('`'))
+    .split('\n').length;
+  console.error(`src/styles.js:${line} — backtick inside the CSS template literal`);
+  process.exit(1);
+}
+
 /** Dynamic imports of the MediaPipe bundle are deliberately left unresolved. */
 const shared = {
   entryPoints: ['src/index.js'],

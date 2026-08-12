@@ -321,7 +321,6 @@ var TYPE = {
 var SIZE = {
   panelWidth: 260,
   panelHeight: 200,
-  miniSize: 106,
   pad: 12,
   gap: 12,
   cornerInset: 4,
@@ -330,10 +329,24 @@ var SIZE = {
   ctaHeight: 32,
   ctaPadX: 12,
   ctaGap: 8,
-  miniCta: 32,
   /** The hand illustration on the pre-enabled card. */
   illoWidth: 66,
   illoHeight: 98
+};
+var TAB = {
+  width: 24,
+  pad: 8,
+  gap: 8,
+  dot: 8,
+  iconWidth: 16,
+  iconHeight: 48,
+  /** Flat against the screen edge, fully rounded on the side facing the page. */
+  radius: 24
+};
+var SIDETAB = {
+  ...TAB,
+  height: TAB.pad * 2 + TAB.iconHeight,
+  liveHeight: TAB.pad * 3 + TAB.dot + TAB.iconHeight
 };
 var FONT_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap";
 
@@ -386,11 +399,6 @@ var CSS = `
 .hc-root[data-position^="bottom"] .hc-panel { bottom: var(--hc-margin); }
 .hc-root[data-position^="top"]    .hc-panel { top: var(--hc-margin); }
 
-.hc-root[data-mini="true"] .hc-panel {
-  width: ${SIZE.miniSize}px;
-  height: ${SIZE.miniSize}px;
-  padding: 0;
-}
 
 .hc-root[data-state="live"] .hc-panel {
   padding: 0;
@@ -412,8 +420,7 @@ var CSS = `
   justify-content: center;
 }
 
-.hc-root[data-state="live"] .hc-stage,
-.hc-root[data-mini="true"] .hc-stage {
+.hc-root[data-state="live"] .hc-stage {
   position: absolute;
   inset: 0;
   width: auto;
@@ -450,7 +457,6 @@ var CSS = `
 }
 
 .hc-root[data-state="live"] .hc-illo { display: none; }
-.hc-root[data-mini="true"] .hc-illo { padding: 10px; }
 
 .hc-illo-img {
   display: block;
@@ -517,8 +523,7 @@ var CSS = `
 
 /* -------------------------------------------------------- corner button -- */
 
-.hc-corner,
-.hc-mini-cta {
+.hc-corner {
   position: absolute;
   appearance: none;
   border: 0;
@@ -547,32 +552,83 @@ var CSS = `
 
 .hc-root[data-state="live"] .hc-corner--tl { display: inline-flex; }
 
-/* ------------------------------------------------------- minimized cta -- */
+/* ------------------------------------------------------------- side tab -- */
 
-.hc-mini-cta {
-  left: ${SIZE.cornerInset}px;
-  bottom: ${SIZE.cornerInset}px;
-  width: ${SIZE.miniCta}px;
-  height: ${SIZE.miniCta}px;
-  border-radius: ${RADIUS.button}px;
-  background: ${COLOR.green};
-  color: ${COLOR.white};
-  transition: background-color 150ms linear, transform 120ms ease-out;
+/*
+ * Minimized, the card becomes a tab on the edge of the screen: flush against
+ * it, flat on that side and fully rounded on the side facing the page. The
+ * width and height transitions on the panel carry it both ways, so it grows
+ * and shrinks rather than cutting between the two.
+ *
+ * Nothing else survives at 24px wide \u2014 no preview, no controls. The tab itself
+ * is the button, and the only thing it can mean is "open me". Turning the
+ * camera off moves back to the expanded card, where there is room to say so.
+ */
+
+.hc-root[data-mini="true"] .hc-panel {
+  width: ${SIDETAB.width}px;
+  height: ${SIDETAB.height}px;
+  padding: 0;
 }
 
-.hc-mini-cta svg { width: ${SIZE.iconSize}px; height: ${SIZE.iconSize}px; }
-.hc-mini-cta:hover,
-.hc-mini-cta.hc-hover { background: ${COLOR.darkGreen}; }
-.hc-mini-cta:active { transform: scale(0.94); }
+/* The green dot is an extra row, so the tab grows to hold it. */
+.hc-root[data-mini="true"][data-state="live"] .hc-panel {
+  height: ${SIDETAB.liveHeight}px;
+}
 
-.hc-root[data-mini="true"] .hc-mini-cta { display: inline-flex; }
+.hc-root[data-mini="true"][data-position$="-left"] .hc-panel {
+  left: 0;
+  border-radius: 0 ${SIDETAB.radius}px ${SIDETAB.radius}px 0;
+}
 
-/* Once the camera is on, the only control in the minimized card is the
-   camera-off icon in the top left. The green button is the pre-enabled
-   affordance and has nothing left to offer here. */
-.hc-root[data-mini="true"][data-state="live"] .hc-mini-cta { display: none; }
+.hc-root[data-mini="true"][data-position$="-right"] .hc-panel {
+  right: 0;
+  border-radius: ${SIDETAB.radius}px 0 0 ${SIDETAB.radius}px;
+}
 
-.hc-root[data-mini="true"][data-state="loading"] .hc-mini-cta { opacity: 0.7; }
+.hc-root[data-mini="true"] .hc-stage,
+.hc-root[data-mini="true"] .hc-corner,
+.hc-root[data-mini="true"][data-state="live"] .hc-corner--tl { display: none; }
+
+.hc-tab {
+  position: absolute;
+  inset: 0;
+  appearance: none;
+  border: 0;
+  margin: 0;
+  padding: ${SIDETAB.pad}px 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: ${SIDETAB.gap}px;
+  background: transparent;
+  color: ${COLOR.iconDark};
+  cursor: pointer;
+}
+
+.hc-root[data-mini="true"] .hc-tab { display: flex; }
+
+.hc-tab svg {
+  display: block;
+  width: ${SIDETAB.iconWidth}px;
+  height: ${SIDETAB.iconHeight}px;
+  flex: none;
+}
+
+/* The chevron points into the page, so it turns around when the tab does. */
+.hc-root[data-position$="-right"] .hc-tab svg { transform: scaleX(-1); }
+
+.hc-tab-dot {
+  display: none;
+  flex: none;
+  width: ${SIDETAB.dot}px;
+  height: ${SIDETAB.dot}px;
+  border-radius: 50%;
+  background: ${COLOR.green};
+}
+
+.hc-root[data-state="live"] .hc-tab-dot { display: block; }
 
 /* -------------------------------------------------------------- spinner -- */
 
@@ -673,7 +729,6 @@ var CSS = `
 @media (prefers-reduced-motion: reduce) {
   .hc-panel,
   .hc-cta,
-  .hc-mini-cta,
   .hc-corner { transition-duration: 1ms; }
   .hc-spinner { animation-duration: 2s; }
 }
@@ -682,6 +737,11 @@ var CSS = `
 // src/icons.js
 var symbol = (d) => `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="${d}" fill="currentColor"/></svg>`;
 var ICONS = {
+  /**
+   * The side tab's chevron. Its own 16x48 box rather than the 24px grid the
+   * others sit on, because it is drawn to the tab's proportions.
+   */
+  chevron: '<svg viewBox="0 0 16 48" fill="none" aria-hidden="true" focusable="false"><path d="M3.89864 6.12617C4.65749 5.79418 5.54205 6.13992 5.87422 6.89864L12.173 21.2961C12.7877 22.7013 12.7877 24.2991 12.173 25.7043L5.87422 40.1018C5.54205 40.8605 4.65748 41.2062 3.89864 40.8742C3.13992 40.542 2.79418 39.6575 3.12617 38.8986L9.425 24.5022C9.70433 23.8635 9.70433 23.1369 9.425 22.4982L3.12617 8.10176C2.79418 7.34291 3.13992 6.45834 3.89864 6.12617Z" fill="currentColor"/></svg>',
   videocam: symbol(
     "M4 20C3.45 20 2.97917 19.8042 2.5875 19.4125C2.19583 19.0208 2 18.55 2 18V6C2 5.45 2.19583 4.97917 2.5875 4.5875C2.97917 4.19583 3.45 4 4 4H16C16.55 4 17.0208 4.19583 17.4125 4.5875C17.8042 4.97917 18 5.45 18 6V10.5L21.15 7.35C21.3167 7.18333 21.5 7.14167 21.7 7.225C21.9 7.30833 22 7.46667 22 7.7V16.3C22 16.5333 21.9 16.6917 21.7 16.775C21.5 16.8583 21.3167 16.8167 21.15 16.65L18 13.5V18C18 18.55 17.8042 19.0208 17.4125 19.4125C17.0208 19.8042 16.55 20 16 20H4ZM4 18H16V6H4V18Z"
   ),
@@ -807,7 +867,10 @@ var Panel = class {
         <button class="hc-cta" type="button"></button>
         <button class="hc-corner hc-corner--tl" type="button"></button>
         <button class="hc-corner hc-corner--tr" type="button"></button>
-        <button class="hc-mini-cta" type="button"></button>
+        <button class="hc-tab" type="button">
+          <span class="hc-tab-dot" aria-hidden="true"></span>
+          ${ICONS.chevron}
+        </button>
       </div>
       <p class="hc-sr" role="status" aria-live="polite"></p>
     `;
@@ -819,7 +882,7 @@ var Panel = class {
     this.cta = q(".hc-cta");
     this.cornerLeft = q(".hc-corner--tl");
     this.cornerRight = q(".hc-corner--tr");
-    this.miniCta = q(".hc-mini-cta");
+    this.tab = q(".hc-tab");
     this.status = q(".hc-sr");
     this.ctx = this.canvas.getContext("2d");
     this.canvasSize = { width: 0, height: 0, dpr: 0 };
@@ -827,7 +890,7 @@ var Panel = class {
     this.cornerLeft.title = options.strings.disable;
     this.cornerLeft.setAttribute("aria-label", options.strings.disable);
     this.cta.addEventListener("click", (event) => handlers.onToggleCamera(event));
-    this.miniCta.addEventListener("click", (event) => handlers.onToggleCamera(event));
+    this.tab.addEventListener("click", () => handlers.onToggleSize());
     this.cornerLeft.addEventListener("click", () => handlers.onStop());
     this.cornerRight.addEventListener("click", () => handlers.onToggleSize());
     this.render();
@@ -854,11 +917,8 @@ var Panel = class {
     const label = loading ? s.starting : this.state === "error" ? s.retry : s.enable;
     this.cta.innerHTML = (loading ? '<span class="hc-spinner"></span>' : ICONS.videocam) + `<span>${label}</span>`;
     this.cta.disabled = loading;
-    this.miniCta.innerHTML = live ? ICONS.videocamOff : ICONS.videocam;
-    const miniLabel = live ? s.disable : s.enable;
-    this.miniCta.title = miniLabel;
-    this.miniCta.setAttribute("aria-label", miniLabel);
-    this.miniCta.disabled = loading;
+    this.tab.title = s.expand;
+    this.tab.setAttribute("aria-label", s.expand);
     const sizeLabel = this.mini ? s.expand : s.minimize;
     this.cornerRight.innerHTML = this.mini ? ICONS.expand : ICONS.collapse;
     this.cornerRight.title = sizeLabel;

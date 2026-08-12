@@ -9,6 +9,18 @@ const symbol = (d) =>
   `<path d="${d}" fill="currentColor"/></svg>`;
 
 export const ICONS = {
+  /**
+   * The side tab's chevron. Its own 16x48 box rather than the 24px grid the
+   * others sit on, because it is drawn to the tab's proportions.
+   */
+  chevron:
+    '<svg viewBox="0 0 16 48" fill="none" aria-hidden="true" focusable="false">' +
+    '<path d="M3.89864 6.12617C4.65749 5.79418 5.54205 6.13992 5.87422 6.89864L12.173 ' +
+    '21.2961C12.7877 22.7013 12.7877 24.2991 12.173 25.7043L5.87422 40.1018C5.54205 ' +
+    '40.8605 4.65748 41.2062 3.89864 40.8742C3.13992 40.542 2.79418 39.6575 3.12617 ' +
+    '38.8986L9.425 24.5022C9.70433 23.8635 9.70433 23.1369 9.425 22.4982L3.12617 ' +
+    '8.10176C2.79418 7.34291 3.13992 6.45834 3.89864 6.12617Z" fill="currentColor"/></svg>',
+
   videocam: symbol(
     'M4 20C3.45 20 2.97917 19.8042 2.5875 19.4125C2.19583 19.0208 2 18.55 2 18V6C2 5.45 ' +
       '2.19583 4.97917 2.5875 4.5875C2.97917 4.19583 3.45 4 4 4H16C16.55 4 17.0208 4.19583 ' +
