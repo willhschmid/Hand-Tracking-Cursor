@@ -138,10 +138,19 @@ own width and height transitions, so it grows and shrinks rather than cutting.
 What the card holds is laid out once at the expanded size and crossfades, so
 none of it re-flows on the way. Sized against the box instead, the copy re-wraps
 line by line as the width animates down and the button squeezes beside it —
-measured, the paragraph went from 236px wide and two lines to 45px wide and
-twelve, mid-transition. The camera preview fades on opacity alone and is never
-taken out of the render tree: it is the frame source the model reads, and
-tracking has to keep running while the card is a tab.
+measured mid-transition, the paragraph went from 236px wide and two lines to
+45px wide and twelve.
+
+The hand illustration is the exception, and scales down with the card as it
+fades. Holding its size like the rest would leave a 24x64 hole over a 66x98
+picture with a quarter of it showing, and a graphic clipped by a closing window
+reads as one being zoomed into rather than one leaving. A transform costs no
+reflow, so it can recede without the wrapping problem that made the copy hold
+still to begin with.
+
+The camera preview fades on opacity alone and is never taken out of the render
+tree: it is the frame source the model reads, and tracking has to keep running
+while the card is a tab.
 
 Nothing else survives at 24px wide. There is no preview and no controls: the
 tab itself is the button, and the only thing it can mean is "open me". Turning

@@ -452,7 +452,19 @@ var CSS = `
   justify-content: center;
   width: 100%;
   height: 100%;
+  /* Scales away with the card rather than holding its size inside it.
+     Everything else here keeps its layout while the box shrinks and lets the
+     card clip the overflow, which is right for text \u2014 but a picture clipped by
+     a closing window does not read as a picture leaving, it reads as one being
+     zoomed into. A transform costs no reflow, so the illustration can recede
+     without the wrapping problem that made the copy hold still in the first
+     place. Timed with the card's own resize, not the shorter fade, so the two
+     move together for as long as it is visible. */
+  transform-origin: center;
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+.hc-root[data-mini="true"] .hc-illo { transform: scale(0.3); }
 
 .hc-root[data-state="live"] .hc-illo { display: none; }
 
@@ -777,6 +789,7 @@ var CSS = `
   .hc-panel,
   .hc-copy,
   .hc-cta,
+  .hc-illo,
   .hc-stage,
   .hc-corner,
   .hc-tab { transition-duration: 1ms; }

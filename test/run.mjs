@@ -211,6 +211,38 @@ check(
     steady.during.copyHeight === steady.open.copyHeight,
   JSON.stringify(steady),
 );
+// A picture clipped by a closing window does not read as a picture leaving, it
+// reads as one being zoomed into: the card ends up a 24x64 hole over a 66x98
+// hand, showing a quarter of it. Scaled down with the card instead, all of it
+// stays on screen the whole way.
+const illoFit = await page.evaluate(async () => {
+  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const panel = root.querySelector('.hc-panel');
+  const img = root.querySelector('.hc-illo-img');
+  window.hc.setMinimized(false);
+  await new Promise((resolve) => setTimeout(resolve, 450));
+
+  const seen = [];
+  let sampling = true;
+  const sample = () => {
+    if (!sampling) return;
+    const p = panel.getBoundingClientRect();
+    const i = img.getBoundingClientRect();
+    seen.push(Math.min(1, p.width / i.width) * Math.min(1, p.height / i.height));
+    requestAnimationFrame(sample);
+  };
+  requestAnimationFrame(sample);
+  window.hc.setMinimized(true);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  sampling = false;
+  return { worst: Math.min(...seen), frames: seen.length };
+});
+check(
+  'the illustration is never cropped by the shrinking card',
+  illoFit.worst > 0.99 && illoFit.frames > 5,
+  `at its worst ${(illoFit.worst * 100).toFixed(0)}% of it was on screen, over ${illoFit.frames} frames`,
+);
+
 check(
   'the button and the illustration do not squeeze either',
   steady.during.cta === steady.open.cta && steady.during.illo === steady.open.illo,
@@ -1137,8 +1169,12 @@ for (const lenis of [false, true]) {
     return { quick, held };
   });
   check(
+    // What is being asked is which of the two the gesture became, and `moved`
+    // is what answers it. The distance scrolled only has to be unmistakably
+    // real — pinned to half the drag, it was sitting on its own boundary and
+    // failed on a run that scrolled exactly 80.
     'with a hold required, a quick drag scrolls instead of grabbing',
-    longPress.quick.scrolled > 80 && longPress.quick.moved === 0,
+    longPress.quick.scrolled > 40 && longPress.quick.moved === 0,
     JSON.stringify(longPress.quick),
   );
   check(
