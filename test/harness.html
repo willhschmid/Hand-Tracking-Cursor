@@ -261,13 +261,19 @@
        * moves. This asks the card instead.
        */
       window.settled = async () => {
-        const panel = document
-          .querySelector('[data-hand-cursor]')
-          .shadowRoot.querySelector('.hc-panel');
+        const sr = document.querySelector('[data-hand-cursor]').shadowRoot;
+        // Both boxes: the card slides and the tab slides with it, but the tab
+        // also grows on its own when the camera comes on, and watching only the
+        // card returns while that is still running.
+        const boxes = ['.hc-panel', '.hc-tab'].map((sel) => sr.querySelector(sel));
         let last = '';
         for (let i = 0; i < 60; i++) {
-          const b = panel.getBoundingClientRect();
-          const now = `${b.width} ${b.height} ${b.left}`;
+          const now = boxes
+            .map((el) => {
+              const b = el.getBoundingClientRect();
+              return `${b.width} ${b.height} ${b.left}`;
+            })
+            .join('|');
           if (now === last) return;
           last = now;
           await new Promise((r) => setTimeout(r, 50));

@@ -105,119 +105,128 @@ check(
 );
 check('CTA reads "Enable Camera"', cta.text === 'Enable Camera', cta.text);
 
-await page.evaluate(() => window.hc.setMinimized(true));
-await page.evaluate(() => window.settled());
-const mini = await shadow('.hc-panel');
+// The tab is a part of the card, not a state of it: it hangs off the edge,
+// level with the bottom, and is there whether the card is out or away.
+const tab = await shadow('.hc-tab');
 check(
-  'minimized, the trackpad is a 24x64 tab',
-  mini.width === 24 && mini.height === 64,
-  `${mini.width}x${mini.height}`,
+  'the tab hangs off the side of the card, 24 wide and level with its bottom',
+  tab.width === 24 &&
+    tab.height === 64 &&
+    tab.left === panel.right &&
+    tab.bottom === panel.bottom,
+  `${tab.width}x${tab.height} at ${tab.left} (card ends ${panel.right}), bottom ${tab.bottom} v ${panel.bottom}`,
 );
 check(
-  'the tab sits flush to the screen edge, 16px off the bottom',
-  mini.left === 0 && 700 - mini.bottom === 16,
-  `left ${mini.left}, bottom ${700 - mini.bottom}`,
+  'the tab is flat against the card and rounded on the page side',
+  tab.radius === '0px 12px 12px 0px',
+  tab.radius,
 );
+// Square where the tab covers it. Left rounded, the card would show a 12px
+// bite out of its own corner against the flat side of the tab.
 check(
-  'the tab is flat against the edge and rounded on the page side',
-  mini.radius === '0px 12px 12px 0px',
-  mini.radius,
+  'the card is square where the tab meets it, and rounded everywhere else',
+  // Serialized short: the bottom-left corner is dropped when it matches the
+  // top-right, so 12 12 0 12 comes back as three values.
+  panel.radius === '12px 12px 0px',
+  panel.radius,
 );
-const tabIcon = await shadow('.hc-tab svg');
+const notch = await shadow('.hc-tab-notch');
+check(
+  'the fillet is 6x6, in the corner above the tab against the card',
+  notch.width === 6 &&
+    notch.height === 6 &&
+    notch.left === tab.left &&
+    notch.bottom === tab.top,
+  JSON.stringify(notch),
+);
+const tabIcon = await shadow('.hc-tab > svg');
 check(
   'the chevron is 16x48, inset 4px either side and 8px top and bottom',
   tabIcon.width === 16 &&
     tabIcon.height === 48 &&
-    tabIcon.left - mini.left === 4 &&
-    mini.right - tabIcon.right === 4 &&
-    tabIcon.top - mini.top === 8 &&
-    mini.bottom - tabIcon.bottom === 8,
+    tabIcon.left - tab.left === 4 &&
+    tab.right - tabIcon.right === 4 &&
+    tabIcon.top - tab.top === 8 &&
+    tab.bottom - tabIcon.bottom === 8,
   JSON.stringify(tabIcon),
 );
+
+await page.evaluate(() => window.hc.setMinimized(true));
+await page.evaluate(() => window.settled());
+const mini = await page.evaluate(() => {
+  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const card = root.querySelector('.hc-panel').getBoundingClientRect();
+  const tab = root.querySelector('.hc-tab').getBoundingClientRect();
+  return { cardRight: card.right, tab: [tab.left, tab.right, innerHeight - tab.bottom] };
+});
+check(
+  'put away, the card is off the screen and the tab is against the edge',
+  mini.cardRight === 0 && mini.tab[0] === 0 && mini.tab[1] === 24,
+  JSON.stringify(mini),
+);
+check('the tab keeps its 16px off the bottom', mini.tab[2] === 16, `${mini.tab[2]}px`);
+
 // Anchored to the other edge, the tab has to turn around with it — otherwise
-// it rounds off into the screen and points out of it.
-const mirrored = await page.evaluate(() => {
+// it hangs off the side the card slides towards and points out of the screen.
+const mirrored = await page.evaluate(async () => {
   const root = document.querySelector('[data-hand-cursor]').shadowRoot;
   const host = root.querySelector('.hc-root');
   host.dataset.position = 'bottom-right';
-  const panel = root.querySelector('.hc-panel');
-  const box = panel.getBoundingClientRect();
+  await window.settled();
+  const card = root.querySelector('.hc-panel').getBoundingClientRect();
+  const tab = root.querySelector('.hc-tab').getBoundingClientRect();
   const out = {
-    right: innerWidth - box.right,
-    radius: getComputedStyle(panel).borderRadius,
-    flip: getComputedStyle(root.querySelector('.hc-tab svg')).transform,
+    cardLeft: innerWidth - card.left,
+    tab: [innerWidth - tab.right, innerWidth - tab.left],
+    radius: getComputedStyle(root.querySelector('.hc-tab')).borderRadius,
+    flip: getComputedStyle(root.querySelector('.hc-tab > svg')).transform,
   };
   host.dataset.position = 'bottom-left';
+  await window.settled();
   return out;
 });
 check(
-  'anchored right, the tab flips to the other edge',
-  mirrored.right === 0 && mirrored.radius === '12px 0px 0px 12px',
+  'anchored right, the whole thing mirrors and slides the other way',
+  mirrored.cardLeft === 0 &&
+    mirrored.tab[0] === 0 &&
+    mirrored.tab[1] === 24 &&
+    mirrored.radius === '12px 0px 0px 12px',
   JSON.stringify(mirrored),
 );
 check(
   'anchored right, the chevron points the other way',
-  mirrored.flip === 'matrix(-1, 0, 0, 1, 0, 0)',
+  mirrored.flip === 'none',
   mirrored.flip,
 );
 
-// The tab is the whole affordance, so tapping anywhere on it opens the card.
+// The tab is the whole affordance, and the only one: it is what puts the card
+// away and what brings it back.
 const reopened = await page.evaluate(async () => {
   const root = document.querySelector('[data-hand-cursor]').shadowRoot;
   root.querySelector('.hc-tab').click();
   await window.settled();
-  const box = root.querySelector('.hc-panel').getBoundingClientRect();
-  window.hc.setMinimized(true);
+  const out = root.querySelector('.hc-panel').getBoundingClientRect();
+  root.querySelector('.hc-tab').click();
   await window.settled();
-  return { width: box.width, height: box.height };
+  const away = root.querySelector('.hc-panel').getBoundingClientRect();
+  return { out: [out.left, out.width], away: away.right };
 });
 check(
-  'tapping the tab opens the card back up',
-  reopened.width === 260 && reopened.height === 200,
+  'tapping the tab takes the card out and puts it back',
+  reopened.out[0] === 16 && reopened.out[1] === 260 && reopened.away === 0,
   JSON.stringify(reopened),
 );
 
-// The complaint this fixes: the card's width animates from 260 to 24, and any
-// content sized against it re-lays out on the way — the copy re-wrapping line
-// by line, the button squeezing beside it. Laid out once at the expanded size
-// and faded, the measurements do not move at all.
-const steady = await page.evaluate(async () => {
-  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
-  const read = () => ({
-    copy: root.querySelector('.hc-copy').getBoundingClientRect().width,
-    cta: root.querySelector('.hc-cta').getBoundingClientRect().width,
-    illo: root.querySelector('.hc-stage').getBoundingClientRect().width,
-    // Height, not a line count: `getClientRects` on a block returns its one box
-    // whatever the text inside is doing. Re-wrapping shows up as the paragraph
-    // getting taller, which is the thing being watched for.
-    copyHeight: root.querySelector('.hc-copy').getBoundingClientRect().height,
-  });
-  window.hc.setMinimized(false);
-  await window.settled();
-  const open = read();
-  window.hc.setMinimized(true);
-  // Sampled mid-resize, where the squeezing was visible, and again at rest.
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  const during = read();
-  await window.settled();
-  const shut = read();
-  return { open, during, shut };
-});
-check(
-  'the copy holds its width and its wrapping while the card shrinks',
-  steady.open.copy === 236 &&
-    steady.during.copy === 236 &&
-    steady.shut.copy === 236 &&
-    steady.during.copyHeight === steady.open.copyHeight,
-  JSON.stringify(steady),
-);
-// A picture clipped by a closing window does not read as a picture leaving, it
-// reads as one being zoomed into: the card ends up a 24x64 hole over a 66x98
-// hand, showing a quarter of it. Scaled down with the card instead, all of it
-// stays on screen the whole way.
-const illoFit = await page.evaluate(async () => {
+// The whole point of sliding rather than resizing: nothing inside the card has
+// to lay out again on the way. The card that used to animate from 260 wide to
+// 24 re-wrapped its copy line by line and squeezed the button beside it, and
+// the illustration had to be scaled by hand to keep from being clipped.
+const slide = await page.evaluate(async () => {
   const root = document.querySelector('[data-hand-cursor]').shadowRoot;
   const panel = root.querySelector('.hc-panel');
+  const tab = root.querySelector('.hc-tab');
+  const copy = root.querySelector('.hc-copy');
+  const cta = root.querySelector('.hc-cta');
   const img = root.querySelector('.hc-illo-img');
   window.hc.setMinimized(false);
   await window.settled();
@@ -227,101 +236,50 @@ const illoFit = await page.evaluate(async () => {
   const sample = () => {
     if (!sampling) return;
     const p = panel.getBoundingClientRect();
-    const i = img.getBoundingClientRect();
-    seen.push(Math.min(1, p.width / i.width) * Math.min(1, p.height / i.height));
+    const t = tab.getBoundingClientRect();
+    seen.push({
+      card: [p.width, p.height],
+      tab: [t.width, t.height, t.left],
+      copy: [copy.getBoundingClientRect().width, copy.getBoundingClientRect().height],
+      cta: cta.getBoundingClientRect().width,
+      illo: [img.getBoundingClientRect().width, img.getBoundingClientRect().height],
+      pad: parseFloat(getComputedStyle(panel).paddingTop),
+    });
     requestAnimationFrame(sample);
   };
   requestAnimationFrame(sample);
   window.hc.setMinimized(true);
   await new Promise((resolve) => setTimeout(resolve, 500));
   sampling = false;
-  return { worst: Math.min(...seen), frames: seen.length };
-});
-// The chevron holds the far side of the card from the tab, so opening sweeps it
-// the width of the card and closing sweeps it back. Centred it drifted only as
-// far as the middle and stopped, which read as neither crossing nor staying.
-const chevronTravel = await page.evaluate(async () => {
-  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
-  const svg = root.querySelector('.hc-tab svg');
-  window.hc.setMinimized(true);
-  await window.settled();
-
-  const seen = [];
-  let sampling = true;
-  const sample = () => {
-    if (!sampling) return;
-    const box = svg.getBoundingClientRect();
-    seen.push([box.left, innerHeight - box.bottom]);
-    requestAnimationFrame(sample);
+  // To a hundredth of a pixel, not exactly: a box measured through a fractional
+  // translate comes back as its two edges added to that offset and subtracted
+  // again, so 236 arrives as 235.99999999999997 on some frames and 236 on
+  // others. That is the float, not the layout.
+  const same = (key) =>
+    seen.every((s) =>
+      [s[key]].flat().every((v, i) => Math.abs(v - [seen[0][key]].flat()[i]) < 0.01),
+    );
+  const xs = seen.map((s) => s.tab[2]);
+  return {
+    frames: seen.length,
+    held: ['card', 'copy', 'cta', 'illo', 'pad'].filter(same),
+    travel: xs[0] - xs[xs.length - 1],
+    monotonic: xs.every((x, i) => i === 0 || x <= xs[i - 1] + 0.01),
+    first: seen[0],
   };
-  requestAnimationFrame(sample);
-  window.hc.setMinimized(false);
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  sampling = false;
-  const xs = seen.map((s) => s[0]);
-  const ys = seen.map((s) => s[1]);
-  return { x: Math.max(...xs) - Math.min(...xs), y: Math.max(...ys) - Math.min(...ys) };
 });
 check(
-  'the chevron crosses the card as it opens, without rising',
-  // Most of the card's width, and not a pixel vertically.
-  chevronTravel.x > 200 && chevronTravel.y < 1,
-  `moved ${chevronTravel.x.toFixed(0)}px across and ${chevronTravel.y.toFixed(0)}px up`,
-);
-
-// Two ways the collapse read as the contents growing before they shrank. The
-// padding was not in the card's transition, so it snapped from 12 to 0 on the
-// first frame while the box was still full size — 24px of room appearing at
-// once, which `space-between` spent immediately. And the illustration shrank
-// more slowly than the card around it, which the eye reads as growth however
-// the absolute numbers are going.
-const collapse = await page.evaluate(async () => {
-  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
-  const panel = root.querySelector('.hc-panel');
-  const img = root.querySelector('.hc-illo-img');
-  window.hc.setMinimized(false);
-  await window.settled();
-
-  const pads = [];
-  const shares = [];
-  let sampling = true;
-  const sample = () => {
-    if (!sampling) return;
-    const box = panel.getBoundingClientRect();
-    pads.push(parseFloat(getComputedStyle(panel).paddingTop));
-    shares.push(img.getBoundingClientRect().width / box.width);
-    requestAnimationFrame(sample);
-  };
-  requestAnimationFrame(sample);
-  window.hc.setMinimized(true);
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  sampling = false;
-  // Only while the padding is actually on its way down; once it lands on 0 it
-  // stays there and says nothing more.
-  const easing = pads.filter((p) => p > 0.01 && p < 11.99);
-  return { easing: easing.length, first: pads[0], shares };
-});
-check(
-  'the padding eases out with the card rather than snapping',
-  collapse.first === 12 && collapse.easing > 3,
-  `started at ${collapse.first}, spent ${collapse.easing} frames between 0 and 12`,
+  'nothing inside the card resizes while it slides away',
+  slide.frames > 5 &&
+    slide.held.length === 5 &&
+    slide.first.card[0] === 260 &&
+    slide.first.pad === 12,
+  `held ${slide.held.join(', ')} over ${slide.frames} frames`,
 );
 check(
-  'the illustration keeps its share of the card the whole way down',
-  Math.max(...collapse.shares) - Math.min(...collapse.shares) < 0.02,
-  `share ran from ${(Math.min(...collapse.shares) * 100).toFixed(0)}% to ${(Math.max(...collapse.shares) * 100).toFixed(0)}%`,
-);
-
-check(
-  'the illustration is never cropped by the shrinking card',
-  illoFit.worst > 0.99 && illoFit.frames > 5,
-  `at its worst ${(illoFit.worst * 100).toFixed(0)}% of it was on screen, over ${illoFit.frames} frames`,
-);
-
-check(
-  'the button and the illustration do not squeeze either',
-  steady.during.cta === steady.open.cta && steady.during.illo === steady.open.illo,
-  JSON.stringify(steady),
+  'the tab travels the card and its margin, one way, and stops on the edge',
+  Math.abs(slide.travel - 276) < 0.5 && slide.monotonic,
+  `moved ${slide.travel.toFixed(1)}px, monotonic ${slide.monotonic}`,
 );
 
 const illustration = await page.evaluate(() => {
@@ -620,34 +578,62 @@ check(
   JSON.stringify(cornerLeft),
 );
 
+// The preview runs to the edge of the card and the tab carries on out of it in
+// flat #F6F6F6, so the video has to fade into that colour rather than stopping
+// dead against it. The spec puts the fade over the last 24px of the 260 — the
+// width of the tab — which is where 90.43% comes from.
+const scrim = await page.evaluate(() => {
+  const sr = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const host = sr.querySelector('.hc-root');
+  const read = () => getComputedStyle(sr.querySelector('.hc-scrim'));
+  const left = { display: read().display, image: read().backgroundImage };
+  host.dataset.position = 'bottom-right';
+  const right = read().backgroundImage;
+  host.dataset.position = 'bottom-left';
+  return { ...left, right };
+});
+check(
+  'the preview fades into the card over the tab’s width',
+  scrim.display === 'block' &&
+    scrim.image.includes('90.43%') &&
+    scrim.image.includes('rgb(246, 246, 246)'),
+  JSON.stringify(scrim.image),
+);
+check(
+  'the fade turns around with the tab',
+  scrim.image.includes('90deg') && scrim.right.includes('270deg'),
+  `${scrim.image} / ${scrim.right}`,
+);
+
 const miniLive = await page.evaluate(async () => {
   window.hc.setMinimized(true);
   await window.settled();
   const sr = document.querySelector('[data-hand-cursor]').shadowRoot;
   const read = () => {
-    const panel = sr.querySelector('.hc-panel').getBoundingClientRect();
+    const tab = sr.querySelector('.hc-tab').getBoundingClientRect();
     const dotStyle = getComputedStyle(sr.querySelector('.hc-tab-dot'));
     const dot = sr.querySelector('.hc-tab-dot').getBoundingClientRect();
-    const icon = sr.querySelector('.hc-tab svg').getBoundingClientRect();
+    const icon = sr.querySelector('.hc-tab > svg').getBoundingClientRect();
     return {
-      height: panel.height,
+      height: tab.height,
       dot: dotStyle.display === 'none' ? null : {
         size: [dot.width, dot.height],
         colour: dotStyle.backgroundColor,
-        fromTop: dot.top - panel.top,
-        sides: [dot.left - panel.left, panel.right - dot.right],
+        fromTop: dot.top - tab.top,
+        sides: [dot.left - tab.left, tab.right - dot.right],
         toChevron: icon.top - dot.bottom,
       },
-      // Nothing else fits in a 24px tab, and nothing else has anything to say.
-      // Read as opacity rather than display: these fade out with the resize, so
-      // "gone" means invisible and untouchable, not removed.
-      hidden: ['.hc-stage', '.hc-corner--tl', '.hc-corner--tr'].map((sel) => {
-        const st = getComputedStyle(sr.querySelector(sel));
-        return { opacity: st.opacity, events: st.pointerEvents };
-      }),
-      // The feed has to stay in the render tree even here — it is what the
-      // model reads every tick, and tracking is the whole point of the tab.
+      // The card goes off the screen whole, and its controls go out of the
+      // keyboard's reach with it — visibility, not opacity, and only once the
+      // slide has finished so nothing disappears in transit.
+      offScreen: sr.querySelector('.hc-panel').getBoundingClientRect().right,
+      hidden: ['.hc-cta', '.hc-corner--tl'].map(
+        (sel) => getComputedStyle(sr.querySelector(sel)).visibility,
+      ),
+      // The feed is never hidden, even here — it is what the model reads every
+      // tick, and tracking is the whole point of putting the card away.
       previewRendered: sr.querySelector('.hc-video').getClientRects().length > 0,
+      previewVisible: getComputedStyle(sr.querySelector('.hc-stage')).visibility,
     };
   };
   const live = read();
@@ -655,8 +641,6 @@ const miniLive = await page.evaluate(async () => {
   await window.settled();
   const idle = read();
   window.hc.panel.setState('live');
-  // Back out of the tab: the preview is hidden while minimized, so anything
-  // after this that reads the canvas needs the card open again.
   window.hc.setMinimized(false);
   await window.settled();
   return { live, idle };
@@ -684,16 +668,16 @@ check(
   JSON.stringify(miniLive.live.dot),
 );
 check(
-  'the tab carries nothing else — no preview and no controls',
-  [miniLive.live, miniLive.idle].every((s) =>
-    s.hidden.every((h) => h.opacity === '0' && h.events === 'none'),
+  'put away, the card is off the screen and out of the keyboard’s reach',
+  [miniLive.live, miniLive.idle].every(
+    (s) => s.offScreen === 0 && s.hidden.every((v) => v === 'hidden'),
   ),
   JSON.stringify({ live: miniLive.live.hidden, idle: miniLive.idle.hidden }),
 );
 check(
   'the camera feed keeps rendering while minimized, so tracking survives',
-  miniLive.live.previewRendered,
-  'the video element left the render tree',
+  miniLive.live.previewRendered && miniLive.live.previewVisible === 'visible',
+  `rendered ${miniLive.live.previewRendered}, visibility ${miniLive.live.previewVisible}`,
 );
 check('the preview is desaturated', video.filter.includes('grayscale'), video.filter);
 

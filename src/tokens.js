@@ -56,7 +56,8 @@ export const SIZE = {
 };
 
 /**
- * The minimized state: a tab stuck to the edge of the screen.
+ * The side tab: a permanent handle on the edge of the card, and the only part
+ * of the trackpad that stays on screen once it is put away.
  *
  * The two heights are derived rather than written down, because the spec gives
  * them as a stack — 8, then the icon, then 8, with the dot and another gap
@@ -70,28 +71,25 @@ const TAB = {
   dot: 8,
   iconWidth: 16,
   iconHeight: 48,
+  /** The concave fillet where the tab's top meets the side of the card. */
+  notch: 6,
 };
 
 /**
- * The card's resize, shared by every property that has to move with it.
+ * Putting the trackpad away, and taking it back out.
  *
- * One value rather than six copies: the padding, the offsets and the
- * illustration's scale are only correct *because* they run on the card's exact
- * timing, so they cannot be allowed to drift apart from it.
+ * The card does not change shape any more: it slides off the side of the
+ * screen and leaves the tab behind on the edge. One transform on one wrapper,
+ * so nothing inside re-lays out on the way and there is no crossfade to keep in
+ * step with anything.
  *
  * The curve is easeInOutQuart as easings.net gives it.
  */
-export const RESIZE = '400ms cubic-bezier(0.76, 0, 0.24, 1)';
+export const SLIDE_MS = 400;
+export const SLIDE = `${SLIDE_MS}ms cubic-bezier(0.76, 0, 0.24, 1)`;
 
-/**
- * The crossfade underneath it, in ms. Shorter than the resize on purpose — the
- * contents should be gone well before the card has finished moving — but tied
- * to it, because the ratio is what decides how much of the card the chevron has
- * crossed by the time it disappears. Left at 160ms against a 400ms resize it
- * managed 23%, where against the 280ms it was written for it managed 97%; held
- * to the same ratio it manages 77%.
- */
-export const FADE_MS = 230;
+/** The cursor's own fade, which has nothing to do with the card. */
+export const FADE_MS = 160;
 
 export const SIDETAB = {
   ...TAB,

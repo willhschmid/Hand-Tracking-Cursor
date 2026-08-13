@@ -339,10 +339,13 @@ var TAB = {
   gap: 8,
   dot: 8,
   iconWidth: 16,
-  iconHeight: 48
+  iconHeight: 48,
+  /** The concave fillet where the tab's top meets the side of the card. */
+  notch: 6
 };
-var RESIZE = "400ms cubic-bezier(0.76, 0, 0.24, 1)";
-var FADE_MS = 230;
+var SLIDE_MS = 400;
+var SLIDE = `${SLIDE_MS}ms cubic-bezier(0.76, 0, 0.24, 1)`;
+var FADE_MS = 160;
 var SIDETAB = {
   ...TAB,
   height: TAB.pad * 2 + TAB.iconHeight,
@@ -351,6 +354,11 @@ var SIDETAB = {
 var FONT_URL = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap";
 
 // src/styles.js
+var SHADOW = `
+    0 0 0 1px ${COLOR.divider},
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 24px rgba(0, 0, 0, 0.08)`;
+var scrim = (deg) => `linear-gradient(${deg}deg, rgba(246, 246, 246, 0) 90.43%, ${COLOR.lightGray} 100%)`;
 var CSS = `
 :host {
   all: initial;
@@ -364,52 +372,117 @@ var CSS = `
   font-family: ${TYPE.family};
   -webkit-font-smoothing: antialiased;
   color: ${COLOR.textPrimary};
+  /* The tab's height, read by the tab and by the shade that casts its shadow.
+     One value, so the two cannot come apart. */
+  --hc-tab-h: ${SIDETAB.height}px;
+  /* The card is square where the tab covers it and rounded everywhere else. */
+  --hc-card-radius: ${RADIUS.card}px ${RADIUS.card}px 0 ${RADIUS.card}px;
+  --hc-tab-radius: 0 ${RADIUS.card}px ${RADIUS.card}px 0;
+}
+
+.hc-root[data-state="live"] { --hc-tab-h: ${SIDETAB.liveHeight}px; }
+
+.hc-root[data-position$="-right"] {
+  --hc-card-radius: ${RADIUS.card}px ${RADIUS.card}px ${RADIUS.card}px 0;
+  --hc-tab-radius: ${RADIUS.card}px 0 0 ${RADIUS.card}px;
 }
 
 .hc-root * { box-sizing: border-box; }
+
+/* ----------------------------------------------------------------- dock -- */
+
+/*
+ * The card and its tab, and the only thing that moves.
+ *
+ * Putting the trackpad away slides the pair far enough sideways to take the
+ * card off the screen, which leaves the tab \u2014 the one part hanging past the
+ * card's edge \u2014 sitting against that edge. Nothing resizes and nothing fades:
+ * the distance is the width of the card plus the margin it sits at, so the
+ * card's outer edge lands exactly on zero.
+ */
+.hc-dock {
+  position: absolute;
+  width: ${SIZE.panelWidth}px;
+  height: ${SIZE.panelHeight}px;
+  transition: transform ${SLIDE};
+}
+
+.hc-root[data-position$="-left"]  .hc-dock { left: var(--hc-margin); }
+.hc-root[data-position$="-right"] .hc-dock { right: var(--hc-margin); }
+.hc-root[data-position^="bottom"] .hc-dock { bottom: var(--hc-margin); }
+.hc-root[data-position^="top"]    .hc-dock { top: var(--hc-margin); }
+
+.hc-root[data-mini="true"][data-position$="-left"] .hc-dock {
+  transform: translateX(calc(-1 * (var(--hc-margin) + ${SIZE.panelWidth}px)));
+}
+
+.hc-root[data-mini="true"][data-position$="-right"] .hc-dock {
+  transform: translateX(calc(var(--hc-margin) + ${SIZE.panelWidth}px));
+}
+
+/* ---------------------------------------------------------------- shade -- */
+
+.hc-shade {
+  position: absolute;
+  pointer-events: none;
+  box-shadow: ${SHADOW};
+}
+
+.hc-shade--card {
+  inset: 0;
+  border-radius: var(--hc-card-radius);
+  /*
+   * Clipped flat against the side the tab is on, by the end of the slide.
+   *
+   * The card stops with that edge on zero, so anything it casts past it lands
+   * back on the screen: a 24px smudge running the height of the card down the
+   * edge of the page, next to a tab that is supposed to be the only thing left.
+   * Cutting it on the card's own timing keeps the shadow while the card is
+   * still on screen and has taken it away by the time the card is not.
+   */
+  transition: clip-path ${SLIDE};
+}
+
+.hc-root[data-position$="-left"]  .hc-shade--card { clip-path: inset(-40px -40px -40px -40px); }
+.hc-root[data-position$="-right"] .hc-shade--card { clip-path: inset(-40px -40px -40px -40px); }
+.hc-root[data-mini="true"][data-position$="-left"]  .hc-shade--card { clip-path: inset(-40px 0 -40px -40px); }
+.hc-root[data-mini="true"][data-position$="-right"] .hc-shade--card { clip-path: inset(-40px -40px -40px 0); }
+
+.hc-shade--tab {
+  bottom: 0;
+  width: ${SIDETAB.width}px;
+  height: var(--hc-tab-h);
+  border-radius: var(--hc-tab-radius);
+  transition: height ${SLIDE};
+}
+
+/*
+ * Cut back by the width of the hairline on the side facing the card, where the
+ * two shades share an edge. Both of them draw that hairline, and the one pixel
+ * where they cross at the bottom corner gets it twice \u2014 222 against 209, on the
+ * one row, which is small but is a mark on an edge that should be a straight
+ * line. Nothing is lost: that side of the tab is covered by the card.
+ */
+.hc-root[data-position$="-left"]  .hc-shade--tab { left: 100%;  clip-path: inset(-40px -40px -40px 1px); }
+.hc-root[data-position$="-right"] .hc-shade--tab { right: 100%; clip-path: inset(-40px 1px -40px -40px); }
 
 /* ---------------------------------------------------------------- panel -- */
 
 .hc-panel {
   position: absolute;
+  inset: 0;
   pointer-events: auto;
-  width: ${SIZE.panelWidth}px;
-  height: ${SIZE.panelHeight}px;
   padding: ${SIZE.pad}px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
   background: ${COLOR.lightGray};
-  border-radius: ${RADIUS.card}px;
+  border-radius: var(--hc-card-radius);
   overflow: hidden;
-  box-shadow:
-    0 0 0 1px ${COLOR.divider},
-    0 1px 2px rgba(0, 0, 0, 0.04),
-    0 8px 24px rgba(0, 0, 0, 0.08);
-  transition:
-    width ${RESIZE},
-    height ${RESIZE},
-    /* Padding animates with them. Left out, it snaps from 12 to 0 on the first
-       frame while the box is still full size \u2014 the content area gains 24px in
-       both directions at once, and space-between throws the illustration up and
-       the button down before anything has started shrinking. It reads as the
-       card's insides expanding just before they collapse. */
-    padding ${RESIZE},
-    /* And its offsets, for the same reason: the tab sits flush to the screen
-       edge while the card sits its margin off it, so leaving these out jumps the
-       whole thing 16px sideways on the first frame of every resize. */
-    left ${RESIZE},
-    right ${RESIZE},
-    background-color 200ms linear,
-    opacity 200ms linear;
 }
 
-.hc-root[data-position$="-left"]  .hc-panel { left: var(--hc-margin); }
-.hc-root[data-position$="-right"] .hc-panel { right: var(--hc-margin); }
-.hc-root[data-position^="bottom"] .hc-panel { bottom: var(--hc-margin); }
-.hc-root[data-position^="top"]    .hc-panel { top: var(--hc-margin); }
-
+.hc-root[data-mini="true"] .hc-panel { pointer-events: none; }
 
 .hc-root[data-state="live"] .hc-panel {
   padding: 0;
@@ -459,31 +532,30 @@ var CSS = `
 .hc-root[data-state="live"] .hc-video,
 .hc-root[data-state="live"] .hc-overlay { display: block; }
 
+/*
+ * The fade over the preview's outer edge, so the video runs out into the card's
+ * own colour where the tab carries on out of it.
+ *
+ * Above the skeleton as well as the video: a bone crossing the last 24px should
+ * go with the picture, not sit sharp on top of a fade.
+ */
+.hc-scrim {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+  background: ${scrim(90)};
+}
+
+.hc-root[data-position$="-right"] .hc-scrim { background: ${scrim(270)}; }
+.hc-root[data-state="live"] .hc-scrim { display: block; }
+
 .hc-illo {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
-  /* Scales away with the card rather than holding its size inside it.
-     Everything else here keeps its layout while the box shrinks and lets the
-     card clip the overflow, which is right for text \u2014 but a picture clipped by
-     a closing window does not read as a picture leaving, it reads as one being
-     zoomed into. A transform costs no reflow, so the illustration can recede
-     without the wrapping problem that made the copy hold still in the first
-     place. Timed with the card's own resize, not the shorter fade, so the two
-     move together for as long as it is visible.
-
-     The scale is the card's own width ratio, on the card's own easing, so the
-     hand keeps the same share of the card the whole way down. Anything larger
-     and it shrinks more slowly than the box around it \u2014 which is growth, as far
-     as the eye is concerned, and growth is what this was reported as. */
-  transform-origin: center;
-  transition: transform ${RESIZE};
-}
-
-.hc-root[data-mini="true"] .hc-illo {
-  transform: scale(${(SIDETAB.width / SIZE.panelWidth).toFixed(4)});
 }
 
 .hc-root[data-state="live"] .hc-illo { display: none; }
@@ -502,12 +574,7 @@ var CSS = `
 .hc-copy {
   flex: none;
   margin: 0;
-  /* Fixed, not a percentage. The card's width animates between 260 and 24,
-     and a percentage width follows it down \u2014 so the copy re-wraps line by line
-     on the way out and the button squeezes beside it. Laid out once at the
-     expanded size, the content simply overflows the shrinking box, which the
-     card already clips, and fades while it does. */
-  width: ${SIZE.panelWidth - SIZE.pad * 2}px;
+  width: 100%;
   text-align: center;
   font-size: ${TYPE.body.size}px;
   font-weight: ${TYPE.body.weight};
@@ -581,7 +648,6 @@ var CSS = `
 .hc-corner:hover,
 .hc-corner.hc-hover { background: ${COLOR.divider}; }
 
-.hc-corner--tr { top: ${SIZE.cornerInset}px; right: ${SIZE.cornerInset}px; display: inline-flex; }
 .hc-corner--tl { top: ${SIZE.cornerInset}px; left: ${SIZE.cornerInset}px; }
 
 .hc-root[data-state="live"] .hc-corner--tl { display: inline-flex; }
@@ -589,131 +655,89 @@ var CSS = `
 /* ------------------------------------------------------------- side tab -- */
 
 /*
- * Minimized, the card becomes a tab on the edge of the screen: flush against
- * it, flat on that side and carrying the card's radius on the other. The
- * width and height transitions on the panel carry it both ways, so it grows
- * and shrinks rather than cutting between the two.
+ * The tab hangs off the side of the card, level with its bottom, and never goes
+ * away. Expanded it is the handle on the edge of the card; slid off, it is the
+ * whole trackpad as far as the screen is concerned \u2014 which is why it is a real
+ * part of the card and not something the minimized state grows into.
  *
- * Nothing else survives at 24px wide \u2014 no preview, no controls. The tab itself
- * is the button, and the only thing it can mean is "open me". Turning the
- * camera off moves back to the expanded card, where there is room to say so.
+ * It is also the only size control there is. At 24px wide there is no room for
+ * anything inside it, and no other thing it could mean.
  */
-
-.hc-root[data-mini="true"] .hc-panel {
-  width: ${SIDETAB.width}px;
-  height: ${SIDETAB.height}px;
-  padding: 0;
-}
-
-/* The green dot is an extra row, so the tab grows to hold it. */
-.hc-root[data-mini="true"][data-state="live"] .hc-panel {
-  height: ${SIDETAB.liveHeight}px;
-}
-
-.hc-root[data-mini="true"][data-position$="-left"] .hc-panel {
-  left: 0;
-  /* The card's own radius: it is the same surface, just narrower. Flat against
-     the screen edge, rounded on the side facing the page. */
-  border-radius: 0 ${RADIUS.card}px ${RADIUS.card}px 0;
-}
-
-.hc-root[data-mini="true"][data-position$="-right"] .hc-panel {
-  right: 0;
-  border-radius: ${RADIUS.card}px 0 0 ${RADIUS.card}px;
-}
-
-/*
- * Crossing between the two sizes is a fade, not a switch. Display cannot be
- * animated, so anything toggled with it pops in or out halfway through the
- * card's resize; opacity carries it across instead, and visibility follows one
- * beat behind so nothing invisible stays clickable or focusable.
- */
-.hc-copy,
-.hc-cta,
-.hc-corner,
-.hc-tab {
-  transition: opacity ${FADE_MS}ms linear, visibility 0s;
-}
-
-.hc-root[data-mini="true"] .hc-copy,
-.hc-root[data-mini="true"] .hc-cta,
-.hc-root[data-mini="true"] .hc-corner {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity ${FADE_MS}ms linear, visibility 0s linear ${FADE_MS}ms;
-}
-
-/*
- * The stage fades on opacity alone \u2014 never display or visibility. The
- * camera feed lives in here, and it is the frame source the model reads every
- * tick. Taking it out of the render tree to hide it would be hiding the thing
- * that makes the tab worth having: tracking has to keep running while the card
- * is a 24px tab, which is most of the time it is being used.
- */
-.hc-stage {
-  transition: opacity ${FADE_MS}ms linear;
-}
-
-.hc-root[data-mini="true"] .hc-stage {
-  opacity: 0;
-  pointer-events: none;
-}
-
 .hc-tab {
   position: absolute;
-  inset: 0;
+  bottom: 0;
+  width: ${SIDETAB.width}px;
+  height: var(--hc-tab-h);
   appearance: none;
   border: 0;
   margin: 0;
-  /* Side padding is what centres the chevron in the tab \u2014 the same 4px the
-     spec asks for \u2014 so anchoring to the edge below costs the tab nothing. */
+  /* The 4px either side of the chevron the spec asks for, and the 8px above
+     and below that the tab's height is built out of. */
   padding: ${SIDETAB.pad}px ${(SIDETAB.width - SIDETAB.iconWidth) / 2}px;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity ${FADE_MS}ms linear, visibility 0s linear ${FADE_MS}ms;
   display: flex;
   flex-direction: column;
-  /*
-   * Held to the far side of the card from the tab, and to the bottom. Opening
-   * therefore sweeps the chevron the width of the card and closing sweeps it
-   * back, which is the movement being asked for \u2014 centred it drifted only as
-   * far as the middle and stopped, which read as neither crossing nor staying.
-   * Vertically it does not move at all.
-   *
-   * In the tab the content fills the box exactly, so this reads identically
-   * there: 4px either side of the chevron, 8px top and bottom. Which end the
-   * chevron holds is invisible at 24px wide, and only decides where it travels
-   * to once the card opens.
-   */
-  align-items: flex-end;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
   gap: ${SIDETAB.gap}px;
-  background: transparent;
+  background: ${COLOR.lightGray};
+  border-radius: var(--hc-tab-radius);
   color: ${COLOR.iconDark};
   cursor: pointer;
+  transition: height ${SLIDE};
 }
 
-.hc-root[data-mini="true"] .hc-tab {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transition: opacity ${FADE_MS}ms linear, visibility 0s;
+.hc-root[data-position$="-left"]  .hc-tab { left: 100%; }
+.hc-root[data-position$="-right"] .hc-tab { right: 100%; }
+
+/*
+ * The fillet, sitting in the right angle above the tab where it meets the side
+ * of the card: same colour, quarter circle bitten out of it, so the card runs
+ * into the tab on a curve instead of a step.
+ */
+.hc-tab-notch {
+  position: absolute;
+  bottom: 100%;
+  width: ${SIDETAB.notch}px;
+  height: ${SIDETAB.notch}px;
+  color: ${COLOR.lightGray};
 }
 
-.hc-tab svg {
+.hc-root[data-position$="-left"]  .hc-tab-notch { left: 0; }
+.hc-root[data-position$="-right"] .hc-tab-notch { right: 0; transform: scaleX(-1); }
+
+.hc-tab-notch svg { display: block; width: 100%; height: 100%; }
+
+/* A child, not a descendant: the fillet is an svg inside the tab too, and it is
+   6x6, not 16x48. */
+.hc-tab > svg {
   display: block;
   width: ${SIDETAB.iconWidth}px;
   height: ${SIDETAB.iconHeight}px;
   flex: none;
 }
 
-/* The chevron points into the page, so it turns around when the tab does \u2014 and
-   so does the side it crosses towards. */
-.hc-root[data-position$="-right"] .hc-tab svg { transform: scaleX(-1); }
-.hc-root[data-position$="-right"] .hc-tab { align-items: flex-start; }
-.hc-root[data-position^="top"] .hc-tab { justify-content: flex-start; }
+/* The chevron lies the way the card does, so it turns around when the tab moves
+   to the other edge. It does not turn around with the state: the card is off
+   that way whether it is out or away. */
+.hc-root[data-position$="-left"] .hc-tab > svg { transform: scaleX(-1); }
+
+/*
+ * Nothing inside the card follows it off the screen as far as the keyboard is
+ * concerned. Held back until the slide has finished so nothing vanishes in
+ * transit, and never applied to the stage: the preview in there is the frame
+ * source the model reads every tick, and tracking has to keep running while the
+ * card is away, which is most of the time it is being used.
+ */
+.hc-cta,
+.hc-corner {
+  transition: visibility 0s;
+}
+
+.hc-root[data-mini="true"] .hc-cta,
+.hc-root[data-mini="true"] .hc-corner {
+  visibility: hidden;
+  transition: visibility 0s linear ${SLIDE_MS}ms;
+}
 
 .hc-tab-dot {
   display: none;
@@ -826,12 +850,8 @@ var CSS = `
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hc-panel,
-  .hc-copy,
-  .hc-cta,
-  .hc-illo,
-  .hc-stage,
-  .hc-corner,
+  .hc-dock,
+  .hc-shade,
   .hc-tab { transition-duration: 1ms; }
   .hc-spinner { animation-duration: 2s; }
 }
@@ -845,17 +865,19 @@ var ICONS = {
    * others sit on, because it is drawn to the tab's proportions.
    */
   chevron: '<svg viewBox="0 0 16 48" fill="none" aria-hidden="true" focusable="false"><path d="M3.89864 6.12617C4.65749 5.79418 5.54205 6.13992 5.87422 6.89864L12.173 21.2961C12.7877 22.7013 12.7877 24.2991 12.173 25.7043L5.87422 40.1018C5.54205 40.8605 4.65748 41.2062 3.89864 40.8742C3.13992 40.542 2.79418 39.6575 3.12617 38.8986L9.425 24.5022C9.70433 23.8635 9.70433 23.1369 9.425 22.4982L3.12617 8.10176C2.79418 7.34291 3.13992 6.45834 3.89864 6.12617Z" fill="currentColor"/></svg>',
+  /**
+   * The fillet under the tab's top corner. Not an icon so much as a piece of
+   * the card: a 6x6 square with a quarter circle taken out of it, which turns
+   * the right angle where the tab meets the card into a curve running out of
+   * one and into the other. Drawn in currentColor so it stays the card's own
+   * colour rather than a second copy of it.
+   */
+  notch: '<svg viewBox="0 0 6 6" fill="none" aria-hidden="true" focusable="false"><path d="M0 0C0 3.31371 2.68629 6 6 6L0 6L0 0Z" fill="currentColor"/></svg>',
   videocam: symbol(
     "M4 20C3.45 20 2.97917 19.8042 2.5875 19.4125C2.19583 19.0208 2 18.55 2 18V6C2 5.45 2.19583 4.97917 2.5875 4.5875C2.97917 4.19583 3.45 4 4 4H16C16.55 4 17.0208 4.19583 17.4125 4.5875C17.8042 4.97917 18 5.45 18 6V10.5L21.15 7.35C21.3167 7.18333 21.5 7.14167 21.7 7.225C21.9 7.30833 22 7.46667 22 7.7V16.3C22 16.5333 21.9 16.6917 21.7 16.775C21.5 16.8583 21.3167 16.8167 21.15 16.65L18 13.5V18C18 18.55 17.8042 19.0208 17.4125 19.4125C17.0208 19.8042 16.55 20 16 20H4ZM4 18H16V6H4V18Z"
   ),
   videocamOff: symbol(
     "M18.0002 10.5L21.1502 7.35001C21.3169 7.18334 21.5002 7.14167 21.7002 7.22501C21.9002 7.30834 22.0002 7.46667 22.0002 7.70001V16.3C22.0002 16.5333 21.9002 16.6917 21.7002 16.775C21.5002 16.8583 21.3169 16.8167 21.1502 16.65L18.0002 13.5C18.0002 13.7833 17.9044 14.0208 17.7127 14.2125C17.521 14.4042 17.2835 14.5 17.0002 14.5C16.7169 14.5 16.4794 14.4042 16.2877 14.2125C16.096 14.0208 16.0002 13.7833 16.0002 13.5V6.00001H9.0002C8.66686 6.00001 8.41686 5.89584 8.2502 5.68751C8.08353 5.47917 8.0002 5.25001 8.0002 5.00001C8.0002 4.75001 8.08353 4.52084 8.2502 4.31251C8.41686 4.10417 8.66686 4.00001 9.0002 4.00001H16.0002C16.5502 4.00001 17.021 4.19584 17.4127 4.58751C17.8044 4.97917 18.0002 5.45001 18.0002 6.00001V10.5ZM19.8502 22.65L1.3502 4.15001C1.16686 3.96667 1.0752 3.73334 1.0752 3.45001C1.0752 3.16667 1.16686 2.93334 1.3502 2.75001C1.53353 2.56667 1.76686 2.47501 2.0502 2.47501C2.33353 2.47501 2.56686 2.56667 2.7502 2.75001L21.2502 21.25C21.4335 21.4333 21.5252 21.6667 21.5252 21.95C21.5252 22.2333 21.4335 22.4667 21.2502 22.65C21.0669 22.8333 20.8335 22.925 20.5502 22.925C20.2669 22.925 20.0335 22.8333 19.8502 22.65ZM4.0002 4.00001L6.0002 6.00001H4.0002V18H16.0002V16L18.0002 18C18.0002 18.55 17.8044 19.0208 17.4127 19.4125C17.021 19.8042 16.5502 20 16.0002 20H4.0002C3.4502 20 2.97936 19.8042 2.5877 19.4125C2.19603 19.0208 2.0002 18.55 2.0002 18V6.00001C2.0002 5.45001 2.19603 4.97917 2.5877 4.58751C2.97936 4.19584 3.4502 4.00001 4.0002 4.00001Z"
-  ),
-  collapse: symbol(
-    "M9.92658 15H6.91499C6.63057 15 6.39215 14.9042 6.19974 14.7125C6.00734 14.5208 5.91113 14.2833 5.91113 14C5.91113 13.7167 6.00734 13.4792 6.19974 13.2875C6.39215 13.0958 6.63057 13 6.91499 13H10.9304C11.2149 13 11.4533 13.0958 11.6457 13.2875C11.8381 13.4792 11.9343 13.7167 11.9343 14V18C11.9343 18.2833 11.8381 18.5208 11.6457 18.7125C11.4533 18.9042 11.2149 19 10.9304 19C10.646 19 10.4076 18.9042 10.2152 18.7125C10.0228 18.5208 9.92658 18.2833 9.92658 18V15ZM15.9497 9H18.9613C19.2458 9 19.4842 9.09583 19.6766 9.2875C19.869 9.47917 19.9652 9.71667 19.9652 10C19.9652 10.2833 19.869 10.5208 19.6766 10.7125C19.4842 10.9042 19.2458 11 18.9613 11H14.9459C14.6615 11 14.423 10.9042 14.2306 10.7125C14.0382 10.5208 13.942 10.2833 13.942 10V6C13.942 5.71667 14.0382 5.47917 14.2306 5.2875C14.423 5.09583 14.6615 5 14.9459 5C15.2303 5 15.4687 5.09583 15.6611 5.2875C15.8535 5.47917 15.9497 5.71667 15.9497 6V9Z"
-  ),
-  expand: symbol(
-    "M7 17H10C10.2833 17 10.5208 17.0958 10.7125 17.2875C10.9042 17.4792 11 17.7167 11 18C11 18.2833 10.9042 18.5208 10.7125 18.7125C10.5208 18.9042 10.2833 19 10 19H6C5.71667 19 5.47917 18.9042 5.2875 18.7125C5.09583 18.5208 5 18.2833 5 18V14C5 13.7167 5.09583 13.4792 5.2875 13.2875C5.47917 13.0958 5.71667 13 6 13C6.28333 13 6.52083 13.0958 6.7125 13.2875C6.90417 13.4792 7 13.7167 7 14V17ZM17 7H14C13.7167 7 13.4792 6.90417 13.2875 6.7125C13.0958 6.52083 13 6.28333 13 6C13 5.71667 13.0958 5.47917 13.2875 5.2875C13.4792 5.09583 13.7167 5 14 5H18C18.2833 5 18.5208 5.09583 18.7125 5.2875C18.9042 5.47917 19 5.71667 19 6V10C19 10.2833 18.9042 10.5208 18.7125 10.7125C18.5208 10.9042 18.2833 11 18 11C17.7167 11 17.4792 10.9042 17.2875 10.7125C17.0958 10.5208 17 10.2833 17 10V7Z"
   )
 };
 var ARROW_SVG = '<svg viewBox="9.6 9.6 14 14" fill="none" aria-hidden="true" focusable="false"><path d="M9.40234 11.3525C8.91256 10.1281 10.1281 8.91256 11.3525 9.40234L22.6514 13.9219C23.9484 14.441 23.8937 16.2954 22.5684 16.7373L18.4326 18.1162C18.2833 18.166 18.166 18.2833 18.1162 18.4326L16.7373 22.5684C16.2954 23.8937 14.441 23.9484 13.9219 22.6514L9.40234 11.3525Z" fill="#111111" stroke="white"/></svg>';
@@ -960,17 +982,22 @@ var Panel = class {
     this.root.dataset.state = this.state;
     this.root.dataset.mini = String(this.mini);
     this.root.innerHTML = `
-      <div class="hc-panel" role="region" aria-label="Hand tracking trackpad">
-        <div class="hc-stage">
-          <video class="hc-video" playsinline muted autoplay></video>
-          <canvas class="hc-overlay" aria-hidden="true"></canvas>
-          <div class="hc-illo"><img class="hc-illo-img" src="${HAND_GRAPHIC}" alt="" width="${SIZE.illoWidth}" height="${SIZE.illoHeight}" draggable="false" /></div>
+      <div class="hc-dock">
+        <div class="hc-shade hc-shade--card" aria-hidden="true"></div>
+        <div class="hc-shade hc-shade--tab" aria-hidden="true"></div>
+        <div class="hc-panel" role="region" aria-label="Hand tracking trackpad">
+          <div class="hc-stage">
+            <video class="hc-video" playsinline muted autoplay></video>
+            <canvas class="hc-overlay" aria-hidden="true"></canvas>
+            <div class="hc-scrim" aria-hidden="true"></div>
+            <div class="hc-illo"><img class="hc-illo-img" src="${HAND_GRAPHIC}" alt="" width="${SIZE.illoWidth}" height="${SIZE.illoHeight}" draggable="false" /></div>
+          </div>
+          <p class="hc-copy"></p>
+          <button class="hc-cta" type="button"></button>
+          <button class="hc-corner hc-corner--tl" type="button"></button>
         </div>
-        <p class="hc-copy"></p>
-        <button class="hc-cta" type="button"></button>
-        <button class="hc-corner hc-corner--tl" type="button"></button>
-        <button class="hc-corner hc-corner--tr" type="button"></button>
         <button class="hc-tab" type="button">
+          <span class="hc-tab-notch" aria-hidden="true">${ICONS.notch}</span>
           <span class="hc-tab-dot" aria-hidden="true"></span>
           ${ICONS.chevron}
         </button>
@@ -984,7 +1011,6 @@ var Panel = class {
     this.copy = q(".hc-copy");
     this.cta = q(".hc-cta");
     this.cornerLeft = q(".hc-corner--tl");
-    this.cornerRight = q(".hc-corner--tr");
     this.tab = q(".hc-tab");
     this.status = q(".hc-sr");
     this.ctx = this.canvas.getContext("2d");
@@ -995,7 +1021,6 @@ var Panel = class {
     this.cta.addEventListener("click", (event) => handlers.onToggleCamera(event));
     this.tab.addEventListener("click", () => handlers.onToggleSize());
     this.cornerLeft.addEventListener("click", () => handlers.onStop());
-    this.cornerRight.addEventListener("click", () => handlers.onToggleSize());
     this.render();
   }
   mount(parent) {
@@ -1020,12 +1045,9 @@ var Panel = class {
     const label = loading ? s.starting : this.state === "error" ? s.retry : s.enable;
     this.cta.innerHTML = (loading ? '<span class="hc-spinner"></span>' : ICONS.videocam) + `<span>${label}</span>`;
     this.cta.disabled = loading;
-    this.tab.title = s.expand;
-    this.tab.setAttribute("aria-label", s.expand);
     const sizeLabel = this.mini ? s.expand : s.minimize;
-    this.cornerRight.innerHTML = this.mini ? ICONS.expand : ICONS.collapse;
-    this.cornerRight.title = sizeLabel;
-    this.cornerRight.setAttribute("aria-label", sizeLabel);
+    this.tab.title = sizeLabel;
+    this.tab.setAttribute("aria-label", sizeLabel);
     this.status.textContent = live ? "Hand tracking is on." : this.state === "error" ? this.message || s.failed : "";
   }
   attachStream(stream) {

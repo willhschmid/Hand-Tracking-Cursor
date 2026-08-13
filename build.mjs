@@ -12,7 +12,10 @@ const banner = `/*! hand-tracking-cursor v${pkg.version} | MIT | ${pkg.repositor
  * refuses now rather than leaving it to be noticed on a device.
  */
 const styles = await readFile(new URL('./src/styles.js', import.meta.url), 'utf8');
-const opened = styles.indexOf('`');
+// From the sheet's own opening backtick, not the file's — there are helpers
+// above it that are template literals themselves, and starting at the first one
+// would report every backtick in between as the bug.
+const opened = styles.indexOf('`', styles.indexOf('export const CSS'));
 const closed = styles.lastIndexOf('`');
 if (styles.slice(opened + 1, closed).includes('`')) {
   const line = styles.slice(0, opened + 1 + styles.slice(opened + 1, closed).indexOf('`'))

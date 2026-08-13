@@ -126,70 +126,70 @@ Taps dispatch a full `pointerdown` → `mousedown` → `pointerup` → `mouseup`
 `click` sequence with real coordinates, and move focus, so buttons, links, form
 controls and framework event handlers all behave normally.
 
-### Minimized
+### The tab, and putting the card away
 
-Minimized, the card becomes a tab on the edge of the screen: 24 wide, flush
-against the edge, flat on that side and carrying the card's 12px radius on the
-side facing the page, sitting `margin` off the bottom. It holds a chevron pointing into the
-page, and once the camera is on, a green dot above it — the tab grows from 64
-to 80 tall to make room. Both the expanding and the collapsing are the card's
-own width and height transitions, so it grows and shrinks rather than cutting.
+The tab is a part of the card rather than a state of it. It hangs off the side —
+24 wide, level with the card's bottom, flat where it meets the card and carrying
+the card's 12px radius on the other three corners — and it is there whether the
+card is out or away. It holds a chevron lying the way the card does, and once
+the camera is on, a green dot above it: the tab grows from 64 to 80 tall to make
+room.
 
-The resize runs 400ms on easeInOutQuart, and every property that has to move
-with the card — its padding, its screen offsets, the illustration's scale —
-reads the same token rather than repeating the value, because each of them is
-only correct while it matches the box exactly.
+Putting the trackpad away slides the card and its tab sideways, far enough to
+take the card off the screen — the width of the card plus the margin it sits at,
+276px at the defaults — which leaves the tab, the part that hangs past the
+card's edge, against the edge of the screen. 400ms on easeInOutQuart. One
+transform on one wrapper, so nothing inside lays out again on the way: measured
+every frame across a slide, the card stays 260x200, its padding stays 12, the
+paragraph stays 236 wide at its original height and the illustration does not
+move.
 
-What the card holds is laid out once at the expanded size and crossfades, so
-none of it re-flows on the way. Sized against the box instead, the copy re-wraps
-line by line as the width animates down and the button squeezes beside it —
-measured mid-transition, the paragraph went from 236px wide and two lines to
-45px wide and twelve.
+That is the whole reason for sliding rather than resizing. A card that animated
+from 260 wide to 24 re-wrapped its copy line by line on the way down — 236px
+and two lines to 45px and twelve — squeezed the button beside it, snapped its
+padding to zero on the first frame while the box was still full size, and ended
+as a 24x64 hole over a 66x98 illustration with a quarter of it showing. Every
+one of those needed its own correction, and each correction had to be timed
+against the resize to the millisecond. Sliding needs none of them.
 
-The crossfade runs 230ms: shorter than the resize on purpose, so the contents
-are gone well before the card stops moving, but scaled with it rather than
-fixed. The ratio between the two is what decides how far the chevron gets
-across the card before it disappears, and easeInOutQuart spends its opening
-frames barely moving. Left at the 160ms that paired with the old 280ms resize —
-where it covered 97% of the crossing — the same fade against 400ms covered 23%.
-Holding the ratio brings it back to 77%.
+The fillet at the top of the tab is a 6x6 square with a quarter circle taken
+out, in the card's own colour, sitting in the right angle where the tab meets
+the card's side. It turns the step into a curve running out of one and into the
+other, so the two boxes read as one shape.
 
-The hand illustration is the exception, and scales down with the card as it
-fades. Holding its size like the rest would leave a 24x64 hole over a 66x98
-picture with a quarter of it showing, and a graphic clipped by a closing window
-reads as one being zoomed into rather than one leaving. A transform costs no
-reflow, so it can recede without the wrapping problem that made the copy hold
-still to begin with. The scale is the card's own width ratio on the card's own
-easing, so the hand holds exactly the same share of the card at every frame —
-shrinking more slowly than the box around it is growth, as far as the eye is
-concerned.
+The shadow is cast from a pair of empty elements underneath both surfaces rather
+than from the card and the tab themselves, and it has to be that way round.
+Given to them directly, each one's shadow lands on the other's face — the tab
+draws a soft dark band down the card where they meet, and the seam the fillet
+exists to hide comes straight back as a shadow. Cast from underneath, every
+shadow falling inside the silhouette is covered by the surface above it and only
+the part that reaches the page is ever seen. The card's shade is clipped flat on
+the side the tab is on, on the card's own timing: the card stops with that edge
+on zero, so anything it cast past that edge would land back on the screen as a
+24px smudge running down the edge of the page, next to a tab that is meant to be
+the only thing left.
 
-The card's padding animates with its width and height, and has to. Left out of
-the transition it snapped from 12 to 0 on the first frame while the box was
-still full size: 24px of room appearing at once, which `space-between` spends
-immediately by throwing the illustration up and the button down. The collapse
-then reads as the contents expanding just before they shrink.
+The camera preview fades into the card over its last 24px — the width of the
+tab, which is where the spec's 90.43% comes from. The preview runs to the edge
+of the card and the tab carries on out of it in flat #F6F6F6, so without the
+fade the video stops dead against the tab and cuts the shape in two. The fade
+sits above the skeleton as well as the video: a bone crossing the last 24px
+should go with the picture rather than sit sharp on top of a fade.
 
-The camera preview fades on opacity alone and is never taken out of the render
-tree: it is the frame source the model reads, and tracking has to keep running
-while the card is a tab.
+The preview itself is never hidden, whatever the card is doing. It is the frame
+source the model reads every tick, and tracking has to keep running while the
+card is away — which is most of the time it is being used. What does get hidden,
+once the slide has finished, is everything in the card the keyboard could still
+reach out there.
 
-Nothing else survives at 24px wide. There is no preview and no controls: the
-tab itself is the button, and the only thing it can mean is "open me". Turning
-the camera off moves back to the expanded card, where there is room to say so —
-or <kbd>Esc</kbd>, which works from either.
+The tab is the only size control there is, in both directions: it puts the card
+away and it brings it back. The corner button that used to duplicate it inside
+the card is gone. Turning the camera off is still the card's own control, or
+<kbd>Esc</kbd>, which works either way.
 
-The chevron holds the far side of the card from the tab, and its bottom, so
-opening sweeps it the width of the card and closing sweeps it back — measured,
-screen x=4 to x=256, at a fixed 24px above the bottom the whole way. Centred it
-drifted as far as the middle and stopped, which read as neither crossing nor
-staying. Which end it holds is invisible in the tab itself, where the content
-fills the 24px box exactly; it only decides where the chevron travels to once
-the card opens.
-
-It follows `position`, so anchoring the trackpad right puts the tab on the right
-edge with its rounding, its chevron and the side it crosses towards all turned
-around.
+All of it follows `position`. Anchoring the trackpad right hangs the tab off the
+card's left, turns the fillet, the rounding, the chevron and the preview's fade
+around with it, and slides the card off the other side of the screen.
 
 ### Hover
 
@@ -371,7 +371,7 @@ HandCursor.init({
   position: 'bottom-left',   // bottom-left | bottom-right | top-left | top-right
   margin: 16,                // distance from the viewport edges, px
   autoStart: false,          // request the camera immediately
-  minimized: false,          // start as the edge tab
+  minimized: false,          // start with the card slid off, tab only
   grayscale: true,           // desaturate the preview
   font: true,                // load Inter if the page does not already have it
   hideNativeCursor: false,   // hide the OS pointer while tracking
@@ -470,7 +470,7 @@ const cursor = HandCursor.init(options);
 
 cursor.start();            // request the camera and begin tracking
 cursor.stop();             // release the camera, return to the idle card
-cursor.setMinimized(true); // collapse to the edge tab
+cursor.setMinimized(true); // slide the card off, leaving the tab
 cursor.destroy();          // remove everything from the page
 
 HandCursor.instance();     // the live instance, or null
@@ -732,14 +732,15 @@ Built to the *Hand Tracking Cursor Design System* (August 2026). Tokens live in
 | Icon dark | `#1C1B1F` — icon strokes |
 | Radius | 8px buttons and controls, 12px cards and the tab's page-facing side |
 | Trackpad | 260 × 200, 12px padding, 4px corner insets |
-| Minimized | A 24 × 64 tab on the screen edge, 80 tall once the camera is on |
+| Side tab | 24 × 64 off the card's edge, 80 tall once the camera is on, on a 6px fillet |
 | Illustration | 66 × 98 on the pre-enabled card |
 | Icons | 24 × 24 Material Symbols in `#1C1B1F`, in 32 × 32 buttons |
 | Live preview | Camera at 15% opacity over the `#F6F6F6` card, so icons stay legible |
 
-Icons are the supplied Material Symbols assets (`videocam`, `videocam_off`,
-`collapse_content`, `expand_content`), inlined in `src/icons.js` and drawn in
-`currentColor`. The cursor arrow is the supplied 32 × 32 SVG, with its viewBox
+Icons are the supplied Material Symbols assets (`videocam`, `videocam_off`),
+inlined in `src/icons.js` and drawn in `currentColor`. The tab's chevron and
+the fillet beside it are the supplied SVGs, on their own 16 x 48 and 6 x 6
+boxes rather than the 24px grid. The cursor arrow is the supplied 32 × 32 SVG, with its viewBox
 retargeted so the arrow's point sits exactly at the element origin — position,
 rotation and the tapped scale all pivot there, so the tip stays pinned to the
 coordinate being addressed.
