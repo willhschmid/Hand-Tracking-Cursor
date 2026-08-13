@@ -254,6 +254,27 @@
       };
 
       /**
+       * Waits for the card to stop resizing.
+       *
+       * How long that takes is a design decision, and it has already changed
+       * once — a fixed sleep beside it is a test that breaks the next time it
+       * moves. This asks the card instead.
+       */
+      window.settled = async () => {
+        const panel = document
+          .querySelector('[data-hand-cursor]')
+          .shadowRoot.querySelector('.hc-panel');
+        let last = '';
+        for (let i = 0; i < 60; i++) {
+          const b = panel.getBoundingClientRect();
+          const now = `${b.width} ${b.height} ${b.left}`;
+          if (now === last) return;
+          last = now;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      };
+
+      /**
        * A plain pinch-drag, awaited, in real time.
        *
        * Real time is not optional here. The scroll runner reads the hand's path

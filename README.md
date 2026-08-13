@@ -135,11 +135,24 @@ page, and once the camera is on, a green dot above it — the tab grows from 64
 to 80 tall to make room. Both the expanding and the collapsing are the card's
 own width and height transitions, so it grows and shrinks rather than cutting.
 
+The resize runs 400ms on easeInOutQuart, and every property that has to move
+with the card — its padding, its screen offsets, the illustration's scale —
+reads the same token rather than repeating the value, because each of them is
+only correct while it matches the box exactly.
+
 What the card holds is laid out once at the expanded size and crossfades, so
 none of it re-flows on the way. Sized against the box instead, the copy re-wraps
 line by line as the width animates down and the button squeezes beside it —
 measured mid-transition, the paragraph went from 236px wide and two lines to
 45px wide and twelve.
+
+The crossfade runs 230ms: shorter than the resize on purpose, so the contents
+are gone well before the card stops moving, but scaled with it rather than
+fixed. The ratio between the two is what decides how far the chevron gets
+across the card before it disappears, and easeInOutQuart spends its opening
+frames barely moving. Left at the 160ms that paired with the old 280ms resize —
+where it covered 97% of the crossing — the same fade against 400ms covered 23%.
+Holding the ratio brings it back to 77%.
 
 The hand illustration is the exception, and scales down with the card as it
 fades. Holding its size like the rest would leave a 24x64 hole over a 66x98

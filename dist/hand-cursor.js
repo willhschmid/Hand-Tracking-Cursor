@@ -371,6 +371,8 @@ var HandCursor = (() => {
     iconWidth: 16,
     iconHeight: 48
   };
+  var RESIZE = "400ms cubic-bezier(0.76, 0, 0.24, 1)";
+  var FADE_MS = 230;
   var SIDETAB = {
     ...TAB,
     height: TAB.pad * 2 + TAB.iconHeight,
@@ -416,19 +418,19 @@ var HandCursor = (() => {
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.08);
   transition:
-    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width ${RESIZE},
+    height ${RESIZE},
     /* Padding animates with them. Left out, it snaps from 12 to 0 on the first
        frame while the box is still full size \u2014 the content area gains 24px in
        both directions at once, and space-between throws the illustration up and
        the button down before anything has started shrinking. It reads as the
        card's insides expanding just before they collapse. */
-    padding 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding ${RESIZE},
     /* And its offsets, for the same reason: the tab sits flush to the screen
        edge while the card sits its margin off it, so leaving these out jumps the
        whole thing 16px sideways on the first frame of every resize. */
-    left 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    right 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    left ${RESIZE},
+    right ${RESIZE},
     background-color 200ms linear,
     opacity 200ms linear;
 }
@@ -507,7 +509,7 @@ var HandCursor = (() => {
      and it shrinks more slowly than the box around it \u2014 which is growth, as far
      as the eye is concerned, and growth is what this was reported as. */
   transform-origin: center;
-  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform ${RESIZE};
 }
 
 .hc-root[data-mini="true"] .hc-illo {
@@ -660,7 +662,7 @@ var HandCursor = (() => {
 .hc-cta,
 .hc-corner,
 .hc-tab {
-  transition: opacity 160ms linear, visibility 0s;
+  transition: opacity ${FADE_MS}ms linear, visibility 0s;
 }
 
 .hc-root[data-mini="true"] .hc-copy,
@@ -669,7 +671,7 @@ var HandCursor = (() => {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 160ms linear, visibility 0s linear 160ms;
+  transition: opacity ${FADE_MS}ms linear, visibility 0s linear ${FADE_MS}ms;
 }
 
 /*
@@ -680,7 +682,7 @@ var HandCursor = (() => {
  * is a 24px tab, which is most of the time it is being used.
  */
 .hc-stage {
-  transition: opacity 160ms linear;
+  transition: opacity ${FADE_MS}ms linear;
 }
 
 .hc-root[data-mini="true"] .hc-stage {
@@ -700,7 +702,7 @@ var HandCursor = (() => {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 160ms linear, visibility 0s linear 160ms;
+  transition: opacity ${FADE_MS}ms linear, visibility 0s linear ${FADE_MS}ms;
   display: flex;
   flex-direction: column;
   /*
@@ -727,7 +729,7 @@ var HandCursor = (() => {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transition: opacity 160ms linear, visibility 0s;
+  transition: opacity ${FADE_MS}ms linear, visibility 0s;
 }
 
 .hc-tab svg {
@@ -785,7 +787,7 @@ var HandCursor = (() => {
   color: ${COLOR.black};
   opacity: 0;
   will-change: transform, opacity;
-  transition: opacity 160ms linear;
+  transition: opacity ${FADE_MS}ms linear;
 }
 
 /* display:block matters here: an inline svg sits on a text baseline and picks

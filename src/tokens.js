@@ -72,6 +72,27 @@ const TAB = {
   iconHeight: 48,
 };
 
+/**
+ * The card's resize, shared by every property that has to move with it.
+ *
+ * One value rather than six copies: the padding, the offsets and the
+ * illustration's scale are only correct *because* they run on the card's exact
+ * timing, so they cannot be allowed to drift apart from it.
+ *
+ * The curve is easeInOutQuart as easings.net gives it.
+ */
+export const RESIZE = '400ms cubic-bezier(0.76, 0, 0.24, 1)';
+
+/**
+ * The crossfade underneath it, in ms. Shorter than the resize on purpose — the
+ * contents should be gone well before the card has finished moving — but tied
+ * to it, because the ratio is what decides how much of the card the chevron has
+ * crossed by the time it disappears. Left at 160ms against a 400ms resize it
+ * managed 23%, where against the 280ms it was written for it managed 97%; held
+ * to the same ratio it manages 77%.
+ */
+export const FADE_MS = 230;
+
 export const SIDETAB = {
   ...TAB,
   height: TAB.pad * 2 + TAB.iconHeight,

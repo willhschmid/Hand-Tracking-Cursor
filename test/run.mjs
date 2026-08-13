@@ -106,7 +106,7 @@ check(
 check('CTA reads "Enable Camera"', cta.text === 'Enable Camera', cta.text);
 
 await page.evaluate(() => window.hc.setMinimized(true));
-await page.waitForTimeout(400);
+await page.evaluate(() => window.settled());
 const mini = await shadow('.hc-panel');
 check(
   'minimized, the trackpad is a 24x64 tab',
@@ -165,10 +165,10 @@ check(
 const reopened = await page.evaluate(async () => {
   const root = document.querySelector('[data-hand-cursor]').shadowRoot;
   root.querySelector('.hc-tab').click();
-  await new Promise((resolve) => setTimeout(resolve, 450));
+  await window.settled();
   const box = root.querySelector('.hc-panel').getBoundingClientRect();
   window.hc.setMinimized(true);
-  await new Promise((resolve) => setTimeout(resolve, 450));
+  await window.settled();
   return { width: box.width, height: box.height };
 });
 check(
@@ -193,13 +193,13 @@ const steady = await page.evaluate(async () => {
     copyHeight: root.querySelector('.hc-copy').getBoundingClientRect().height,
   });
   window.hc.setMinimized(false);
-  await new Promise((resolve) => setTimeout(resolve, 450));
+  await window.settled();
   const open = read();
   window.hc.setMinimized(true);
   // Sampled mid-resize, where the squeezing was visible, and again at rest.
   await new Promise((resolve) => setTimeout(resolve, 120));
   const during = read();
-  await new Promise((resolve) => setTimeout(resolve, 450));
+  await window.settled();
   const shut = read();
   return { open, during, shut };
 });
@@ -220,7 +220,7 @@ const illoFit = await page.evaluate(async () => {
   const panel = root.querySelector('.hc-panel');
   const img = root.querySelector('.hc-illo-img');
   window.hc.setMinimized(false);
-  await new Promise((resolve) => setTimeout(resolve, 450));
+  await window.settled();
 
   const seen = [];
   let sampling = true;
@@ -233,7 +233,7 @@ const illoFit = await page.evaluate(async () => {
   };
   requestAnimationFrame(sample);
   window.hc.setMinimized(true);
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  await new Promise((resolve) => setTimeout(resolve, 500));
   sampling = false;
   return { worst: Math.min(...seen), frames: seen.length };
 });
@@ -244,7 +244,7 @@ const chevronTravel = await page.evaluate(async () => {
   const root = document.querySelector('[data-hand-cursor]').shadowRoot;
   const svg = root.querySelector('.hc-tab svg');
   window.hc.setMinimized(true);
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await window.settled();
 
   const seen = [];
   let sampling = true;
@@ -256,7 +256,7 @@ const chevronTravel = await page.evaluate(async () => {
   };
   requestAnimationFrame(sample);
   window.hc.setMinimized(false);
-  await new Promise((resolve) => setTimeout(resolve, 350));
+  await new Promise((resolve) => setTimeout(resolve, 500));
   sampling = false;
   const xs = seen.map((s) => s[0]);
   const ys = seen.map((s) => s[1]);
@@ -280,7 +280,7 @@ const collapse = await page.evaluate(async () => {
   const panel = root.querySelector('.hc-panel');
   const img = root.querySelector('.hc-illo-img');
   window.hc.setMinimized(false);
-  await new Promise((resolve) => setTimeout(resolve, 450));
+  await window.settled();
 
   const pads = [];
   const shares = [];
@@ -294,7 +294,7 @@ const collapse = await page.evaluate(async () => {
   };
   requestAnimationFrame(sample);
   window.hc.setMinimized(true);
-  await new Promise((resolve) => setTimeout(resolve, 350));
+  await new Promise((resolve) => setTimeout(resolve, 500));
   sampling = false;
   // Only while the padding is actually on its way down; once it lands on 0 it
   // stays there and says nothing more.
@@ -341,7 +341,7 @@ check(
 );
 
 await page.evaluate(() => window.hc.setMinimized(false));
-await page.waitForTimeout(400);
+await page.evaluate(() => window.settled());
 
 // ---------------------------------------------------------------- cursor --
 
@@ -622,7 +622,7 @@ check(
 
 const miniLive = await page.evaluate(async () => {
   window.hc.setMinimized(true);
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await window.settled();
   const sr = document.querySelector('[data-hand-cursor]').shadowRoot;
   const read = () => {
     const panel = sr.querySelector('.hc-panel').getBoundingClientRect();
@@ -652,13 +652,13 @@ const miniLive = await page.evaluate(async () => {
   };
   const live = read();
   window.hc.panel.setState('idle');
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await window.settled();
   const idle = read();
   window.hc.panel.setState('live');
   // Back out of the tab: the preview is hidden while minimized, so anything
   // after this that reads the canvas needs the card open again.
   window.hc.setMinimized(false);
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await window.settled();
   return { live, idle };
 });
 check(
