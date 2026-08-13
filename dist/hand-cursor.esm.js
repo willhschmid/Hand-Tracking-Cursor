@@ -719,12 +719,39 @@ var CSS = `
   width: ${SIDETAB.iconWidth}px;
   height: ${SIDETAB.iconHeight}px;
   flex: none;
+  /*
+   * The chevron points where the card is: out of the page while the card is out
+   * and there is nothing to fetch, into it once the card has gone. Reversing is
+   * a horizontal mirror on the card's own timing, so the arrow turns over
+   * exactly as the card travels.
+   *
+   * A scale, not a swap for a second drawing: every point travels along its own
+   * horizontal line, so the arrow flattens to a vertical stroke as its points
+   * cross and opens the other way, in place. Nothing rotates and nothing slides.
+   *
+   * The two drawings this was specified as are a 180 degree rotation of each
+   * other rather than a mirror \u2014 they agree to five decimal places under
+   * rotation. The glyph is symmetric about its own centre line, y=23.5, which
+   * is half a pixel above the middle of the 48px box, so rotating it lands it
+   * one pixel lower than mirroring it does. Mirroring is what was asked for and
+   * what is drawn here: the chevron holds its exact height and only its points
+   * move.
+   */
+  transition: transform ${SLIDE};
 }
 
-/* The chevron lies the way the card does, so it turns around when the tab moves
-   to the other edge. It does not turn around with the state: the card is off
-   that way whether it is out or away. */
-.hc-root[data-position$="-left"] .hc-tab > svg { transform: scaleX(-1); }
+/* Which way that is depends on the side the tab is on and on where the card is,
+   so the two disagreeing is what reverses it: the drawing points into the page
+   from a left-hand tab only while the card is away, and from a right-hand tab
+   only while it is out. */
+.hc-root[data-position$="-left"] .hc-tab > svg,
+.hc-root[data-mini="true"][data-position$="-right"] .hc-tab > svg {
+  transform: scaleX(-1);
+}
+
+.hc-root[data-mini="true"][data-position$="-left"] .hc-tab > svg {
+  transform: scaleX(1);
+}
 
 /*
  * Nothing inside the card follows it off the screen as far as the keyboard is

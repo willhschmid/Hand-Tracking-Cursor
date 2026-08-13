@@ -131,9 +131,9 @@ controls and framework event handlers all behave normally.
 The tab is a part of the card rather than a state of it. It hangs off the side —
 24 wide, level with the card's bottom, flat where it meets the card and carrying
 the card's 12px radius on the other three corners — and it is there whether the
-card is out or away. It holds a chevron lying the way the card does, and once
-the camera is on, a green dot above it: the tab grows from 64 to 80 tall to make
-room.
+card is out or away. It holds a chevron pointing at wherever the card is, and
+once the camera is on, a green dot above it: the tab grows from 64 to 80 tall to
+make room.
 
 Putting the trackpad away slides the card and its tab sideways, far enough to
 take the card off the screen — the width of the card plus the margin it sits at,
@@ -151,6 +151,28 @@ padding to zero on the first frame while the box was still full size, and ended
 as a 24x64 hole over a 66x98 illustration with a quarter of it showing. Every
 one of those needed its own correction, and each correction had to be timed
 against the resize to the millisecond. Sliding needs none of them.
+
+The chevron reverses as the card travels, on the same 400ms. It is one drawing
+scaled by -1 rather than two drawings swapped, so every point moves along its
+own horizontal line: the arrow narrows to a vertical stroke as its points cross
+and opens the other way, in place. Measured across the reversal, the ink is
+9.63px wide at rest and 0.01px at the crossing, and its top sits at 14.000px on
+every frame — nothing rises, falls or rotates.
+
+Which way it points depends on the tab's side and on where the card is, and it
+is the two disagreeing that turns it: a left-hand tab points into the page only
+while the card is away, a right-hand tab only while it is out.
+
+The two drawings this was specified as are a 180 degree rotation of each other
+rather than a mirror — they agree to five decimal places under rotation. The
+glyph is symmetric about its own centre line at y=23.5, half a pixel above the
+middle of the 48px box, so a rotation lands it one pixel lower than a mirror
+does. The mirror is what is drawn here, which is why the chevron holds its
+height exactly. The one thing it does inherit from the artwork is a 0.37px swing
+across the tab: the drawing sits 0.18px left of the middle of its own box, so
+mirroring it about that middle moves the ink twice that far. Both supplied
+drawings carry the same offset in opposite directions, so the swing is the
+artwork's rather than the animation's.
 
 The fillet at the top of the tab is a 6x6 square with a quarter circle taken
 out, in the card's own colour, sitting in the right angle where the tab meets

@@ -179,7 +179,6 @@ const mirrored = await page.evaluate(async () => {
     cardLeft: innerWidth - card.left,
     tab: [innerWidth - tab.right, innerWidth - tab.left],
     radius: getComputedStyle(root.querySelector('.hc-tab')).borderRadius,
-    flip: getComputedStyle(root.querySelector('.hc-tab > svg')).transform,
   };
   host.dataset.position = 'bottom-left';
   await window.settled();
@@ -193,10 +192,98 @@ check(
     mirrored.radius === '12px 0px 0px 12px',
   JSON.stringify(mirrored),
 );
+// The chevron points where the card is: out of the page while the card is out,
+// into it once the card has gone. Which way that is depends on the tab's side
+// as well, so all four combinations are worth stating outright.
+const facing = await page.evaluate(async () => {
+  const sr = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const host = sr.querySelector('.hc-root');
+  // The asset is drawn pointing right, so a negative horizontal scale means it
+  // points left. Read off the matrix rather than compared to a string: an
+  // unmirrored chevron is scaleX(1), which computes to a matrix and not to
+  // "none", and treating those as different is how this first read backwards.
+  const read = () => {
+    const t = getComputedStyle(sr.querySelector('.hc-tab > svg')).transform;
+    if (t === 'none') return 'right';
+    return parseFloat(t.slice(t.indexOf('(') + 1)) < 0 ? 'left' : 'right';
+  };
+  const out = {};
+  for (const side of ['bottom-left', 'bottom-right']) {
+    host.dataset.position = side;
+    for (const mini of [false, true]) {
+      window.hc.setMinimized(mini);
+      await window.settled();
+      out[`${side}/${mini ? 'away' : 'out'}`] = read();
+    }
+  }
+  host.dataset.position = 'bottom-left';
+  window.hc.setMinimized(false);
+  await window.settled();
+  return out;
+});
 check(
-  'anchored right, the chevron points the other way',
-  mirrored.flip === 'none',
-  mirrored.flip,
+  'the chevron points at the card in all four arrangements',
+  facing['bottom-left/out'] === 'left' &&
+    facing['bottom-left/away'] === 'right' &&
+    facing['bottom-right/out'] === 'right' &&
+    facing['bottom-right/away'] === 'left',
+  JSON.stringify(facing),
+);
+
+// And it reverses by moving its points sideways, which is a specific claim:
+// the ink holds its height and its centre for the whole crossing, and passes
+// through nothing at all in the middle. A rotation would carry the ends up and
+// down; a crossfade would hold the width and drop the opacity.
+const crossing = await page.evaluate(async () => {
+  const sr = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const ink = sr.querySelector('.hc-tab > svg path');
+  const tab = sr.querySelector('.hc-tab');
+  const seen = [];
+  let sampling = true;
+  const sample = () => {
+    if (!sampling) return;
+    const i = ink.getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    seen.push({
+      top: i.top - t.top,
+      bottom: t.bottom - i.bottom,
+      width: i.width,
+      // Where the ink sits across the tab, which is what "stays centred" means
+      // while the tab itself is travelling.
+      offset: (i.left + i.right) / 2 - (t.left + t.right) / 2,
+    });
+    requestAnimationFrame(sample);
+  };
+  requestAnimationFrame(sample);
+  window.hc.setMinimized(true);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  sampling = false;
+  window.hc.setMinimized(false);
+  await window.settled();
+  const spread = (key) =>
+    Math.max(...seen.map((s) => s[key])) - Math.min(...seen.map((s) => s[key]));
+  return {
+    frames: seen.length,
+    heightSpread: Math.max(spread('top'), spread('bottom')),
+    offsetSpread: spread('offset'),
+    narrowest: Math.min(...seen.map((s) => s.width)),
+    widest: Math.max(...seen.map((s) => s.width)),
+  };
+});
+check(
+  'the chevron holds its height and its place while its points cross',
+  // Not to zero across: the supplied drawing is 0.18px left of the middle of
+  // its own 16px box, so mirroring it about that middle swings the ink twice
+  // that far. Both of the drawings this was specified as carry the same
+  // offset, in opposite directions, so the swing is the artwork's and not the
+  // animation's — and a third of a pixel is not a thing anyone can see.
+  crossing.frames > 5 && crossing.heightSpread < 0.01 && crossing.offsetSpread < 0.4,
+  `height moved ${crossing.heightSpread.toFixed(3)}px, centre moved ${crossing.offsetSpread.toFixed(3)}px`,
+);
+check(
+  'it narrows to a line on the way rather than fading or turning',
+  crossing.narrowest < crossing.widest / 2,
+  `${crossing.widest.toFixed(2)}px wide at rest, ${crossing.narrowest.toFixed(2)}px at its narrowest`,
 );
 
 // The tab is the whole affordance, and the only one: it is what puts the card
@@ -208,6 +295,10 @@ check(
 // the empty parts of it stays usable, and anything really there has to turn
 // them back on. The tab did not, when it moved out of the card, and every test
 // that poked the element itself still passed while nothing on screen worked.
+await page.evaluate(async () => {
+  window.hc.setMinimized(true);
+  await window.settled();
+});
 const tabSpot = async () => {
   const box = await page.evaluate(() => {
     const b = document
