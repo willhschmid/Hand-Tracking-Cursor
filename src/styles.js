@@ -13,7 +13,6 @@ import { COLOR, FADE_MS, RADIUS, SIDETAB, SIZE, SLIDE, SLIDE_MS, TYPE } from './
  * part that reaches the page is ever seen.
  */
 const SHADOW = `
-    0 0 0 1px ${COLOR.divider},
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.08)`;
 
@@ -130,15 +129,8 @@ export const CSS = `
   transition: height ${SLIDE};
 }
 
-/*
- * Cut back by the width of the hairline on the side facing the card, where the
- * two shades share an edge. Both of them draw that hairline, and the one pixel
- * where they cross at the bottom corner gets it twice — 222 against 209, on the
- * one row, which is small but is a mark on an edge that should be a straight
- * line. Nothing is lost: that side of the tab is covered by the card.
- */
-.hc-root[data-position$="-left"]  .hc-shade--tab { left: 100%;  clip-path: inset(-40px -40px -40px 1px); }
-.hc-root[data-position$="-right"] .hc-shade--tab { right: 100%; clip-path: inset(-40px 1px -40px -40px); }
+.hc-root[data-position$="-left"]  .hc-shade--tab { left: 100%; }
+.hc-root[data-position$="-right"] .hc-shade--tab { right: 100%; }
 
 /* ---------------------------------------------------------------- panel -- */
 
@@ -298,6 +290,12 @@ export const CSS = `
 
 /* -------------------------------------------------------- corner button -- */
 
+/*
+ * Turning the camera off. Filled red with a white icon rather than a bare icon
+ * on the preview: it sits on top of a moving camera picture, which is the one
+ * surface in the card with no fixed contrast to sit against, and it is the one
+ * control here that cannot be undone by pressing it again.
+ */
 .hc-corner {
   position: absolute;
   appearance: none;
@@ -307,20 +305,20 @@ export const CSS = `
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  background: transparent;
-  color: ${COLOR.iconDark};
-}
-
-.hc-corner {
   width: ${SIZE.cornerButton}px;
   height: ${SIZE.cornerButton}px;
   border-radius: ${RADIUS.button}px;
-  transition: background-color 150ms linear;
+  background: ${COLOR.red};
+  color: ${COLOR.white};
+  transition: filter 150ms linear;
 }
 
 .hc-corner svg { width: ${SIZE.iconSize}px; height: ${SIZE.iconSize}px; }
+
+/* The palette has one red and no darker one to pair with it, so the hover
+   darkens the swatch instead of inventing a second one. */
 .hc-corner:hover,
-.hc-corner.hc-hover { background: ${COLOR.divider}; }
+.hc-corner.hc-hover { filter: brightness(0.92); }
 
 .hc-corner--tl { top: ${SIZE.cornerInset}px; left: ${SIZE.cornerInset}px; }
 
@@ -345,6 +343,13 @@ export const CSS = `
   appearance: none;
   border: 0;
   margin: 0;
+  /* The root turns pointer events off so the page underneath stays usable
+     through the parts of the overlay that are empty, and each thing that is
+     really there turns them back on. The tab is one of those things: it lives
+     outside the card now, so the card's rule does not reach it, and without
+     this it is not clickable at all — by a mouse or by the cursor, which hit
+     tests the same way. */
+  pointer-events: auto;
   /* The 4px either side of the chevron the spec asks for, and the 8px above
      and below that the tab's height is built out of. */
   padding: ${SIDETAB.pad}px ${(SIDETAB.width - SIDETAB.iconWidth) / 2}px;

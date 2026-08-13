@@ -157,6 +157,12 @@ out, in the card's own colour, sitting in the right angle where the tab meets
 the card's side. It turns the step into a curve running out of one and into the
 other, so the two boxes read as one shape.
 
+The card carries a shadow and no border. There was a `rgba(0, 0, 0, 0.08)`
+hairline around it, which also turned out to be the only reason the two shadows
+below needed clipping where they met: both shades drew it, and the pixel where
+they crossed at the shared corner got it twice. With the hairline gone the seam
+measures flat.
+
 The shadow is cast from a pair of empty elements underneath both surfaces rather
 than from the card and the tab themselves, and it has to be that way round.
 Given to them directly, each one's shadow lands on the other's face — the tab
@@ -734,7 +740,7 @@ Built to the *Hand Tracking Cursor Design System* (August 2026). Tokens live in
 | Trackpad | 260 × 200, 12px padding, 4px corner insets |
 | Side tab | 24 × 64 off the card's edge, 80 tall once the camera is on, on a 6px fillet |
 | Illustration | 66 × 98 on the pre-enabled card |
-| Icons | 24 × 24 Material Symbols in `#1C1B1F`, in 32 × 32 buttons |
+| Icons | 24 × 24 Material Symbols in 32 × 32 buttons — the camera-off control filled `#FF4040` with a white icon |
 | Live preview | Camera at 15% opacity over the `#F6F6F6` card, so icons stay legible |
 
 Icons are the supplied Material Symbols assets (`videocam`, `videocam_off`),

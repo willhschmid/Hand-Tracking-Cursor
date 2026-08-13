@@ -201,20 +201,59 @@ check(
 
 // The tab is the whole affordance, and the only one: it is what puts the card
 // away and what brings it back.
-const reopened = await page.evaluate(async () => {
-  const root = document.querySelector('[data-hand-cursor]').shadowRoot;
-  root.querySelector('.hc-tab').click();
+//
+// Pressed where it is on the screen, not by calling click() on the element.
+// Dispatching straight at the node skips hit testing, which is the one thing
+// worth checking here: the overlay turns pointer events off so the page under
+// the empty parts of it stays usable, and anything really there has to turn
+// them back on. The tab did not, when it moved out of the card, and every test
+// that poked the element itself still passed while nothing on screen worked.
+const tabSpot = async () => {
+  const box = await page.evaluate(() => {
+    const b = document
+      .querySelector('[data-hand-cursor]')
+      .shadowRoot.querySelector('.hc-tab')
+      .getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  });
+  await page.mouse.click(box.x, box.y);
+  await page.evaluate(() => window.settled());
+  return page.evaluate(
+    () =>
+      document
+        .querySelector('[data-hand-cursor]')
+        .shadowRoot.querySelector('.hc-panel')
+        .getBoundingClientRect().left,
+  );
+};
+const clickedOut = await tabSpot();
+const clickedAway = await tabSpot();
+check(
+  'clicking the tab where it sits takes the card out and puts it back',
+  clickedOut === 16 && clickedAway === -260,
+  `out at ${clickedOut}, away at ${clickedAway}`,
+);
+// Same question asked of the hit test directly, since that is what the hand
+// cursor consults rather than the mouse.
+const hitTest = await page.evaluate(async () => {
+  const sr = document.querySelector('[data-hand-cursor]').shadowRoot;
+  const at = () => {
+    const b = sr.querySelector('.hc-tab').getBoundingClientRect();
+    const hit = sr.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    return hit ? hit.closest('.hc-tab') !== null : false;
+  };
+  const away = at();
+  window.hc.setMinimized(false);
   await window.settled();
-  const out = root.querySelector('.hc-panel').getBoundingClientRect();
-  root.querySelector('.hc-tab').click();
+  const out = at();
+  window.hc.setMinimized(true);
   await window.settled();
-  const away = root.querySelector('.hc-panel').getBoundingClientRect();
-  return { out: [out.left, out.width], away: away.right };
+  return { away, out };
 });
 check(
-  'tapping the tab takes the card out and puts it back',
-  reopened.out[0] === 16 && reopened.out[1] === 260 && reopened.away === 0,
-  JSON.stringify(reopened),
+  'the tab answers a hit test at its own coordinates, out or away',
+  hitTest.away && hitTest.out,
+  JSON.stringify(hitTest),
 );
 
 // The whole point of sliding rather than resizing: nothing inside the card has
