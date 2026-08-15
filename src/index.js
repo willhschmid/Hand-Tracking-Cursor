@@ -1,9 +1,16 @@
 import { HandCursorController } from './controller.js';
-import { DEFAULTS } from './config.js';
+import { DEFAULTS, mergeOptions } from './config.js';
 
 export const VERSION = '1.0.0';
 
 let current = null;
+
+/**
+ * Whatever was written on the script tag, kept so that a later init() call can
+ * build on it rather than throw it away. The tag is the page's baseline and the
+ * snippet is the page changing its mind about part of it.
+ */
+let scriptOptions = {};
 
 /**
  * Creates (or replaces) the trackpad and adds it to the page.
@@ -15,9 +22,35 @@ export function init(options = {}) {
   // console to open on a phone, which is exactly where the numbers are needed.
   const urlDebug =
     typeof location !== 'undefined' && location.href.includes('handcursor-debug');
-  current = new HandCursorController(urlDebug ? { ...options, debug: true } : options);
-  current.mount(options.container || document.body);
-  return current;
+  const settings = mergeOptions(scriptOptions, urlDebug ? { ...options, debug: true } : options);
+  const controller = new HandCursorController(settings);
+  current = controller;
+
+  /*
+   * The snippet that configures this usually sits under the script tag in the
+   * body, where there is a body to mount into. In the head there is not — the
+   * document has not reached it yet — and this used to throw on appendChild and
+   * leave the page with no trackpad at all. Waiting costs the head case one
+   * event and the body case nothing.
+   *
+   * The instance is registered before the wait either way, so the automatic
+   * mount below stands down immediately rather than racing this one.
+   */
+  const parent = options.container || document.body;
+  if (parent) {
+    controller.mount(parent);
+  } else {
+    document.addEventListener(
+      'DOMContentLoaded',
+      () => {
+        // Unless something has replaced it in the meantime, in which case that
+        // one is the page's trackpad and this one was thrown away.
+        if (current === controller) controller.mount(document.body);
+      },
+      { once: true },
+    );
+  }
+  return controller;
 }
 
 /** The instance currently on the page, if any. */
@@ -67,10 +100,13 @@ function optionsFromScript(script) {
 }
 
 function autoMount(script) {
+  scriptOptions = optionsFromScript(script);
   if (script?.dataset.manual !== undefined) return;
-  const options = optionsFromScript(script);
   const run = () => {
-    if (!current) init(options);
+    // Nothing to do if a snippet under the tag has already made one. That is
+    // the whole mechanism: the page's own init() wins by getting there first,
+    // and it inherits the tag's settings through scriptOptions.
+    if (!current) init();
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', run, { once: true });

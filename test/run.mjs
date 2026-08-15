@@ -1669,6 +1669,72 @@ for (const mode of ['write', 'native', 'hybrid']) {
 
 check('no uncaught page errors', pageErrors.length === 0, pageErrors.join(' | '));
 
+// ------------------------------------------------------------------- boot --
+
+/*
+ * How a page configures the trackpad, one whole document per way of doing it.
+ *
+ * Whole documents because the thing under test is *when* the script runs
+ * against the document: a snippet in the head runs before there is a body to
+ * mount into, which used to throw on appendChild and leave the page with no
+ * trackpad at all. Nothing inside a single already-loaded page can see that.
+ *
+ * Each fixture is read for the same three things, because between them they
+ * catch everything that can go wrong here — two trackpads instead of one if the
+ * automatic mount does not stand down, the wrong starting state if the settings
+ * are ignored, and the tag's own settings lost if a snippet replaces them
+ * instead of building on them.
+ */
+const boot = [
+  ['snippet-in-body', { count: 1, mini: true, position: 'bottom-left', margin: '16px' }],
+  ['snippet-in-head', { count: 1, mini: true, position: 'bottom-left', margin: '16px' }],
+  ['snippet-deferred', { count: 1, mini: true, position: 'bottom-left', margin: '16px' }],
+  ['no-snippet', { count: 1, mini: false, position: 'bottom-left', margin: '16px' }],
+  ['attribute', { count: 1, mini: true, position: 'bottom-left', margin: '16px' }],
+  ['attribute-and-snippet', { count: 1, mini: true, position: 'bottom-right', margin: '40px' }],
+  ['manual', { count: 1, mini: true, position: 'bottom-left', margin: '40px' }],
+];
+
+for (const [name, want] of boot) {
+  const sheet = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+  const thrown = [];
+  sheet.on('pageerror', (error) => thrown.push(error.message));
+  await sheet.goto(`http://localhost:${PORT}/test/boot/${name}.html`, { waitUntil: 'load' });
+  const got = await sheet.evaluate(async () => {
+    const hosts = document.querySelectorAll('[data-hand-cursor]');
+    if (!hosts.length) return { count: 0 };
+    const root = hosts[0].shadowRoot.querySelector('.hc-root');
+    await window.hc?.settled?.();
+    return {
+      count: hosts.length,
+      mini: root.dataset.mini === 'true',
+      position: root.dataset.position,
+      margin: root.style.getPropertyValue('--hc-margin'),
+      // Where the card ended up, which is the thing a reader would actually
+      // see. Put away, its outer edge lands on the screen edge.
+      cardEdge: Math.round(
+        hosts[0].shadowRoot.querySelector('.hc-panel').getBoundingClientRect().right,
+      ),
+    };
+  });
+  await sheet.close();
+  const placed = want.mini
+    ? want.position === 'bottom-right'
+      ? got.cardEdge === 1260
+      : got.cardEdge === 0
+    : got.cardEdge === 276 || got.cardEdge === 984;
+  check(
+    `${name}: one trackpad, ${want.mini ? 'put away' : 'out'}, at ${want.position} ${want.margin}`,
+    !thrown.length &&
+      got.count === want.count &&
+      got.mini === want.mini &&
+      got.position === want.position &&
+      got.margin === want.margin &&
+      placed,
+    `${JSON.stringify(got)}${thrown.length ? ` threw ${thrown.join(' | ')}` : ''}`,
+  );
+}
+
 // ------------------------------------------------------------------ report --
 
 for (const { name, pass, detail } of results) {

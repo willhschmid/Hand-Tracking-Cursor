@@ -42,7 +42,17 @@ corner, asks for the camera, and takes over from there.
 <script src="/path/to/hand-cursor.min.js"></script>
 ```
 
-The script mounts itself on load. Configure it right on the tag:
+The script mounts itself on load, with the defaults. To change any of them,
+either write a snippet under the tag:
+
+```html
+<script src="/path/to/hand-cursor.min.js"></script>
+<script>
+  HandCursor.init({ minimized: true });
+</script>
+```
+
+or put the simple ones on the tag itself:
 
 ```html
 <script
@@ -53,8 +63,9 @@ The script mounts itself on load. Configure it right on the tag:
 ></script>
 ```
 
-Add `data-manual` to skip the automatic mount and call `HandCursor.init()`
-yourself.
+Either way, leaving a setting out keeps its default — a page with nothing but
+the first line gets the trackpad as it ships. See [Options](#options) for the
+full list and for how the two combine.
 
 ### Adding it to a site you already have
 
@@ -391,6 +402,43 @@ document.addEventListener('handcursor:drop', (e) => e.detail.dropped);
 ---
 
 ## Options
+
+Two ways to set them, and you can use both.
+
+**A snippet under the tag.** Anything you pass to `init()` overrides the
+default; leave a key out and the default stands. This is the same shape Swiper
+and friends use — an *options object* (or *config object*) handed to an
+initializer.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/willhschmid/Hand-Tracking-Cursor@main/dist/hand-cursor.min.js"></script>
+<script>
+  HandCursor.init({ minimized: true });
+</script>
+```
+
+That starts with the card slid off and only the tab showing. Drop the second
+`<script>` and the trackpad loads expanded, exactly as it does now — the
+snippet is the only thing that changes it, and there is nothing to remove
+from the page but those three lines.
+
+The snippet may sit anywhere after the tag, including in the `<head>`, and it
+works with a `defer`red or `async` script as long as you wait for the library
+to exist. It does not need `DOMContentLoaded`: mounting waits for the body on
+its own if it has to.
+
+**Attributes on the tag**, for the values that are plain strings, numbers or
+booleans, with no JavaScript at all:
+
+```html
+<script src="/path/to/hand-cursor.min.js" data-minimized="true" data-position="bottom-right"></script>
+```
+
+Use both and the attributes are the baseline with the snippet layered over
+them, key by key — so a tag that sets `data-position` and a snippet that sets
+`minimized` give you both, not the last one to run. Add `data-manual` to hold
+the automatic mount back entirely and let your own `init()` be the thing that
+puts it on the page.
 
 Every value below is a default; pass any subset to `init()`.
 

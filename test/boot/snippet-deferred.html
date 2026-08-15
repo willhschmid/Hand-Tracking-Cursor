@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Deferred script, configured on ready</title>
+    <script defer src="/dist/hand-cursor.min.js"></script>
+  </head>
+  <body>
+    <p>The script is deferred, so the page waits for it before configuring.</p>
+    <script>
+      addEventListener('DOMContentLoaded', () => HandCursor.init({ minimized: true }));
+    </script>
+  </body>
+</html>

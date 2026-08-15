@@ -2831,12 +2831,26 @@ function shadowUi(shadowRoot) {
 // src/index.js
 var VERSION = "1.0.0";
 var current = null;
+var scriptOptions = {};
 function init(options = {}) {
   current?.destroy();
   const urlDebug = typeof location !== "undefined" && location.href.includes("handcursor-debug");
-  current = new HandCursorController(urlDebug ? { ...options, debug: true } : options);
-  current.mount(options.container || document.body);
-  return current;
+  const settings = mergeOptions(scriptOptions, urlDebug ? { ...options, debug: true } : options);
+  const controller = new HandCursorController(settings);
+  current = controller;
+  const parent = options.container || document.body;
+  if (parent) {
+    controller.mount(parent);
+  } else {
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        if (current === controller) controller.mount(document.body);
+      },
+      { once: true }
+    );
+  }
+  return controller;
 }
 function instance() {
   return current;
@@ -2872,10 +2886,10 @@ function optionsFromScript(script) {
   return options;
 }
 function autoMount(script) {
+  scriptOptions = optionsFromScript(script);
   if (script?.dataset.manual !== void 0) return;
-  const options = optionsFromScript(script);
   const run = () => {
-    if (!current) init(options);
+    if (!current) init();
   };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", run, { once: true });
