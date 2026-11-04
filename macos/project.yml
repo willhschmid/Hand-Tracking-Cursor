@@ -1,0 +1,110 @@
+# XcodeGen spec for the Mac app. The .xcodeproj, Info.plists and entitlements
+# are generated from this file — edit here, then run `xcodegen` again.
+#
+#   brew install xcodegen
+#   cd macos && xcodegen && open HandCursor.xcodeproj
+#
+# Signing: put `DEVELOPMENT_TEAM = <your team id>` in Config/Local.xcconfig
+# (gitignored) so regenerating the project never wipes it.
+
+name: HandCursor
+
+options:
+  bundleIdPrefix: com.willhschmid
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  HandCursor:
+    type: application
+    platform: macOS
+    sources:
+      - path: HandCursor
+      - path: Shared
+    dependencies:
+      # Embedded in Contents/PlugIns, which is what makes the control show up
+      # in Control Center's gallery.
+      - target: HandCursorControls
+        embed: true
+    settings:
+      base:
+        PRODUCT_NAME: "Hand Cursor"
+        PRODUCT_BUNDLE_IDENTIFIER: com.willhschmid.HandCursor
+        PRODUCT_MODULE_NAME: HandCursor
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) HOST_APP"
+        # Not sandboxed: posting mouse events into other apps needs it, and it
+        # means distribution is Developer ID (notarized), not the App Store.
+        ENABLE_APP_SANDBOX: NO
+    info:
+      path: HandCursor/Info.plist
+      properties:
+        CFBundleDisplayName: Hand Cursor
+        LSApplicationCategoryType: public.app-category.utilities
+        # No Dock icon, no menu bar item. The only surfaces are the Control
+        # Center control and Siri.
+        LSUIElement: true
+        NSCameraUsageDescription: >-
+          Hand Cursor watches your hand to move the pointer. Video is processed
+          on this Mac and never stored or sent anywhere.
+        # Extra names Siri accepts in place of "Hand Cursor".
+        INAlternativeAppNames:
+          - INAlternativeAppName: Hand Tracking
+          - INAlternativeAppName: Hand Mouse
+        HCAppGroup: "$(TeamIdentifierPrefix)com.willhschmid.HandCursor"
+    entitlements:
+      path: HandCursor/HandCursor.entitlements
+      properties:
+        com.apple.security.device.camera: true
+        com.apple.security.application-groups:
+          - "$(TeamIdentifierPrefix)com.willhschmid.HandCursor"
+
+  HandCursorControls:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: HandCursorControls
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: HandCursorControls
+        PRODUCT_BUNDLE_IDENTIFIER: com.willhschmid.HandCursor.Controls
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) CONTROLS_EXTENSION"
+        ENABLE_APP_SANDBOX: YES
+    info:
+      path: HandCursorControls/Info.plist
+      properties:
+        CFBundleDisplayName: Hand Cursor
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        HCAppGroup: "$(TeamIdentifierPrefix)com.willhschmid.HandCursor"
+    entitlements:
+      path: HandCursorControls/HandCursorControls.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - "$(TeamIdentifierPrefix)com.willhschmid.HandCursor"
+
+schemes:
+  HandCursor:
+    build:
+      targets:
+        HandCursor: all
+    run:
+      config: Debug
+    archive:
+      config: Release

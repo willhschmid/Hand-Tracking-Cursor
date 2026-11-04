@@ -14,6 +14,10 @@ the camera stream never leaves the browser.
 That is the whole integration. The trackpad card appears in the bottom-left
 corner, asks for the camera, and takes over from there.
 
+Want it everywhere, not just on one website? [`macos/`](macos/) is a Mac
+app version that drives the real system pointer. You turn it on and off from
+Control Center or by asking Siri.
+
 ---
 
 ## Contents
