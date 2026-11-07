@@ -5,9 +5,10 @@ import Foundation
 ///
 /// A control's intent runs inside the widget extension, not the app, so the
 /// extension can't start the camera itself. It writes the new value here and
-/// pings the app with a Darwin notification; the app (always running as an
-/// invisible login item) does the work. The value is persisted, so an app that
-/// was not running yet picks it up the moment it launches.
+/// pings the app with a Darwin notification; the app (running invisibly, and
+/// launched by the extension if it isn't yet) does the work. The value is
+/// persisted, so an app that was not running yet picks it up the moment it
+/// launches.
 enum SharedState {
     /// `$(TeamIdentifierPrefix)com.willhschmid.HandCursor`, resolved at build
     /// time into each target's Info.plist.

@@ -27,8 +27,8 @@ struct SetHandCursorIntent: SetValueIntent {
     }
 }
 
-/// Starts the app if a control was flipped while it wasn't running — it is
-/// normally a login item, so this only matters right after install or a quit.
+/// Starts the app if a control was flipped while it wasn't running (it stays
+/// resident once started, and starts at login if the user opted in).
 enum HostApp {
     static func launchIfNeeded() {
         #if CONTROLS_EXTENSION

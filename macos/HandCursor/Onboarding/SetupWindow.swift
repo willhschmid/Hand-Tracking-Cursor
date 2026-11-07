@@ -74,7 +74,7 @@ struct SetupView: View {
             .foregroundStyle(.secondary)
 
             HStack {
-                Toggle("Open at login", isOn: $openAtLogin)
+                Toggle("Open at login (faster to turn on)", isOn: $openAtLogin)
                     .onChange(of: openAtLogin) { _, on in LoginItem.setEnabled(on) }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }

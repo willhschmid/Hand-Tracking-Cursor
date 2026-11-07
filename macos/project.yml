@@ -36,6 +36,8 @@ targets:
     sources:
       - path: HandCursor
       - path: Shared
+      - path: Privacy/App/PrivacyInfo.xcprivacy
+        buildPhase: resources
     dependencies:
       # Embedded in Contents/PlugIns, which is what makes the control show up
       # in Control Center's gallery.
@@ -47,9 +49,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.willhschmid.HandCursor
         PRODUCT_MODULE_NAME: HandCursor
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) HOST_APP"
-        # Not sandboxed: posting mouse events into other apps needs it, and it
-        # means distribution is Developer ID (notarized), not the App Store.
-        ENABLE_APP_SANDBOX: NO
+        # Sandboxed for the Mac App Store. Moving the pointer only needs the
+        # Post Event privilege (CGRequestPostEventAccess), which works inside
+        # the sandbox; the full Accessibility privilege would not, and is not
+        # used anywhere.
+        ENABLE_APP_SANDBOX: YES
     info:
       path: HandCursor/Info.plist
       properties:
@@ -66,9 +70,12 @@ targets:
           - INAlternativeAppName: Hand Tracking
           - INAlternativeAppName: Hand Mouse
         HCAppGroup: "$(TeamIdentifierPrefix)com.willhschmid.HandCursor"
+        # No custom encryption; skips the export compliance question on upload.
+        ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: HandCursor/HandCursor.entitlements
       properties:
+        com.apple.security.app-sandbox: true
         com.apple.security.device.camera: true
         com.apple.security.application-groups:
           - "$(TeamIdentifierPrefix)com.willhschmid.HandCursor"
@@ -79,6 +86,8 @@ targets:
     sources:
       - path: HandCursorControls
       - path: Shared
+      - path: Privacy/Controls/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: HandCursorControls
@@ -91,6 +100,7 @@ targets:
         CFBundleDisplayName: Hand Cursor
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        ITSAppUsesNonExemptEncryption: false
         HCAppGroup: "$(TeamIdentifierPrefix)com.willhschmid.HandCursor"
     entitlements:
       path: HandCursorControls/HandCursorControls.entitlements

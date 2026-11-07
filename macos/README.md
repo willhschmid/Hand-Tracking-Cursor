@@ -35,9 +35,9 @@ aimed. The tuning numbers are at the top of
   own controls to the Mac's Control Center.
 - Xcode 26 or later.
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
-- An Apple Developer account. Control Center controls and App Groups need a
-  signed build. To share the app with other people, you need the paid program
-  so it can be notarized.
+- An Apple Developer Program membership ($99/year). Control Center controls
+  and App Groups need a signed build, and selling on the Mac App Store needs
+  the paid program.
 
 ## Build
 
@@ -53,10 +53,13 @@ window. It asks for:
 
 1. **Camera:** to see your hand. Frames are processed on the Mac by Apple's
    Vision framework and never stored or sent anywhere.
-2. **Accessibility:** to move the pointer and click. macOS only lets you grant
-   this in System Settings, so the button takes you there.
+2. **Permission to control the pointer.** macOS lists this under Privacy &
+   Security › Accessibility, and you can only switch it on there, so the
+   button takes you to that page.
 
-After that, the app runs as an invisible login item. To add the button, open
+After that, the app runs invisibly in the background. *Open at login* is off
+by default; switching it on makes the first turn-on after a restart a little
+faster. To add the button, open
 Control Center, choose **Edit Controls**, and add **Hand Cursor**. You can also
 drag it into the menu bar. To reopen the setup window later, open *Hand Cursor*
 from Spotlight or Finder.
@@ -94,16 +97,38 @@ Siri / Shortcuts ───────► HandCursorController (app process, alw
 
 A Control Center button runs its action inside a sandboxed widget extension,
 and that process can't keep the camera running. So the button only records the
-state you want, and the app does the work. The app is a login item, so it's
-already running and the button responds right away. If you quit the app, the
-button launches it again.
+state you want, and the app does the work. If the app isn't running, the
+button launches it first.
 
-### Why it isn't in the Mac App Store
+## Mac App Store
 
-Moving the pointer in other apps means posting synthetic input events. That
-requires the Accessibility permission and an app outside the App Store
-sandbox. To share it, distribute it like other utilities in this category:
-signed with a Developer ID and notarized. Only the extension is sandboxed.
+The app and its extension are both sandboxed, as the Mac App Store requires.
+
+Moving the pointer and clicking in other apps uses `CGEvent.post`. macOS gates
+that behind the **Post Event** privilege (`CGRequestPostEventAccess`), which
+works inside the sandbox. It is different from the full **Accessibility**
+privilege, which doesn't work in the sandbox and isn't used here. Both appear
+under Privacy & Security › Accessibility in System Settings, which is why
+they're easy to confuse.
+
+What's already set up for submission:
+
+- App Sandbox on both targets, with only the camera and App Group
+  entitlements.
+- Privacy manifests (`Privacy/`) declaring no data collection or tracking, and
+  the reasons for the two "required reason" APIs used (`UserDefaults`,
+  `systemUptime`).
+- Open at login is opt-in. App Review doesn't allow starting at login without
+  the user's consent.
+- `ITSAppUsesNonExemptEncryption = NO`, so uploads skip the export compliance
+  question.
+
+The open risk is App Review's judgment rather than anything technical. Apps
+posting synthetic input have been rejected for using accessibility features
+for non-accessibility purposes. [`APP_REVIEW.md`](APP_REVIEW.md) has draft
+review notes that explain why this one is an accessibility feature. If it's
+rejected anyway, the same build can be signed with Developer ID, notarized and
+sold directly.
 
 ## Status
 
@@ -111,6 +136,11 @@ This is a first scaffold. It was written without a Mac to build on, so expect
 a round of compile fixes in Xcode the first time. Things to check on real
 hardware:
 
+- **Pointer control from the sandbox.** Confirm that the pointer moves and
+  clicks in other apps in a sandboxed build after granting the permission.
+  This is the first thing to test before submitting.
+- **Launching from the button.** Check that the sandboxed extension can start
+  the app when it isn't running.
 - **Scroll direction.** Posted scroll events may or may not be flipped by the
   Natural Scrolling setting. If scrolling feels backwards, flip
   `scrollDirection` in `GestureEngine.Tuning`.

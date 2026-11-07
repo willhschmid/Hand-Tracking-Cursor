@@ -19,11 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let firstLaunch = !UserDefaults.standard.bool(forKey: Self.onboardedKey)
-        if firstLaunch {
-            // Stay resident (invisible) so the control and Siri respond
-            // instantly instead of waiting on a cold launch.
-            LoginItem.setEnabled(true)
-        }
+        // Open at login is opt-in, from the setup window: App Store rules
+        // forbid starting at login without the user's say-so. It isn't needed
+        // anyway — the control and Siri both launch the app on demand.
 
         HandCursorController.shared.start()
 
